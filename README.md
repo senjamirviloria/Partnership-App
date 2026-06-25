@@ -51,6 +51,8 @@ npm run dev
 docker compose up --build
 ```
 
+For Docker builds, `NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY` must be available to Docker Compose before the image is built because Next.js bakes `NEXT_PUBLIC_*` values into the browser bundle. Put it in a root `.env` file or export it in the shell before `docker compose up --build`. It must match `TERRITORY_TRANSPORT_KEY`.
+
 2. App will be available at:
 - [http://localhost:3000](http://localhost:3000)
 

@@ -22,6 +22,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_BETTER_AUTH_URL: ${NEXT_PUBLIC_BETTER_AUTH_URL:-http://localhost:3101}
+        NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY: ${NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY}
     container_name: partnerships-app
     platform: linux/arm64/v8
     depends_on:

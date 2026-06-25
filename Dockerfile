@@ -6,9 +6,13 @@ RUN npm ci
 FROM node:20-bookworm-slim AS builder
 WORKDIR /app
 RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+ARG NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY
+ARG NEXT_PUBLIC_BETTER_AUTH_URL
+ENV NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY=$NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY
+ENV NEXT_PUBLIC_BETTER_AUTH_URL=$NEXT_PUBLIC_BETTER_AUTH_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma generate && npm run build -- --webpack
+RUN if [ -z "$NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY" ]; then echo "Missing build arg NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY"; exit 1; fi; npx prisma generate && npm run build -- --webpack
 
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
