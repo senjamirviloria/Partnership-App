@@ -1,0 +1,42 @@
+**user-service/docker-compose.yml**
+```
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: user-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-secret}"
+      POSTGRES_DB: user_service
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - auth-network
+    restart: always
+
+  user-service:
+    build: ./user-service
+    ports:
+      - "8080:8080"
+    networks:
+      - auth-network
+    depends_on:
+      - db
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      API_PORT: 8080
+    restart: on-failure
+
+directives:
+  db-data:
+    path: /var/lib/postgresql/data
+
+networks:
+  auth-network:
+    driver: bridge
+```

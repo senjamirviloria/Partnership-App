@@ -1,0 +1,47 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: partnerships-db
+    platform: linux/arm64/v8
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: partnerships_db
+      MYSQL_USER: app_user
+      MYSQL_PASSWORD: app_password
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uapp_user", "-papp_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: partnerships-app
+    platform: linux/arm64/v8
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: .env.seed.local
+        required: false
+    environment:
+      DATABASE_URL: mysql://app_user:app_password@db:3306/partnerships_db
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3101}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3101}
+      NEXT_PUBLIC_BETTER_AUTH_URL: ${NEXT_PUBLIC_BETTER_AUTH_URL:-http://localhost:3101}
+      TERRITORY_TRANSPORT_KEY: ${TERRITORY_TRANSPORT_KEY}
+      NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY: ${NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY}
+      NODE_OPTIONS: --max-old-space-size=512
+    ports:
+      - "3101:3101"
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

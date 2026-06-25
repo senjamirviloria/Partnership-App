@@ -1,0 +1,56 @@
+[
+  {
+    "areaName": "DTAQ 1",
+    "description": "DTAQ 1",
+    "territories": [
+      {
+        "territoryName": "A",
+        "locations": "Stadium Metro Station (including Zoom)",
+        "noOfPartners": 1,
+        "withCars": false
+      },
+      {
+        "territoryName": "B",
+        "locations": "Al Nahda Metro Station; Noor Al Qusais Supermarket",
+        "noOfPartners": 1,
+        "withCars": false
+      }
+    ]
+  },
+  {
+    "areaName": "Street Witnessing",
+    "description": "Street witnessing locations",
+    "territories": [
+      {
+        "territoryName": "1",
+        "locations": "Stadium Metro Station; Stadium Bus Stop",
+        "noOfPartners": 1,
+        "withCars": false
+      },
+      {
+        "territoryName": "2",
+        "locations": "Al Nahda Metro Station; Mc Donalds; Enoc 64",
+        "noOfPartners": 1,
+        "withCars": false
+      }
+    ]
+  },
+  {
+    "areaName": "ZOOM Meetings",
+    "description": "DTAQ Zoom Meetings",
+    "territories": [
+      {
+        "territoryName": "Room 1",
+        "locations": "Breakout Room 1",
+        "noOfPartners": 1,
+        "withCars": false
+      },
+      {
+        "territoryName": "Room 2",
+        "locations": "Breakout Room 2",
+        "noOfPartners": 1,
+        "withCars": false
+      }
+    ]
+  }
+]

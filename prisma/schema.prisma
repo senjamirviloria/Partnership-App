@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String              @id @default(cuid())
+  email               String              @unique
+  emailVerified       Boolean             @default(false) @map("email_verified")
+  username            String              @unique
+  name                String
+  role                String              @default("user") @db.VarChar(32)
+  image               String?
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  sessions            Session[]
+  accounts            Account[]
+  assignments         PartnerAssignment[] @relation("AssignedBy")
+  assignees           Assignee[]
+  selectedTerritories SelectedTerritory[]
+  slotAssignments     SlotAssignment[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime @map("expires_at")
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id")
+  accessToken           String?   @map("access_token") @db.Text
+  refreshToken          String?   @map("refresh_token") @db.Text
+  idToken               String?   @map("id_token") @db.Text
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("verifications")
+}
+
+model Area {
+  id          Int         @id @default(autoincrement())
+  areaName    String      @unique @map("area_name") @db.VarChar(100)
+  description String?     @db.VarChar(255)
+  territories Territory[]
+
+  @@map("areas")
+}
+
+model Territory {
+  id              Int                 @id @default(autoincrement())
+  territoryName   String              @map("territory_name") @db.VarChar(120)
+  areaId          Int                 @map("area_id")
+  locations       String?             @db.Text
+  noOfPartners    Int?                @map("no_of_partners")
+  withCars        Boolean             @default(false) @map("with_cars")
+  area            Area                @relation(fields: [areaId], references: [id], onDelete: Cascade)
+  assignments     PartnerAssignment[]
+  selectedBy      SelectedTerritory[]
+  slotAssignments SlotAssignment[]
+
+  @@unique([areaId, territoryName])
+  @@index([areaId])
+  @@map("territories")
+}
+
+enum AssigneeGender {
+  male
+  female
+}
+
+model Assignee {
+  id              String           @id @default(cuid())
+  userId          String           @map("user_id")
+  name            String           @db.VarChar(120)
+  gender          AssigneeGender
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slotAssignments SlotAssignment[]
+
+  @@index([userId])
+  @@map("assignees")
+}
+
+model SelectedTerritory {
+  id          Int       @id @default(autoincrement())
+  userId      String    @map("user_id")
+  territoryId Int       @map("territory_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  territory   Territory @relation(fields: [territoryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, territoryId])
+  @@index([territoryId])
+  @@map("selected_territories")
+}
+
+model SlotAssignment {
+  id          Int       @id @default(autoincrement())
+  userId      String    @map("user_id")
+  territoryId Int       @map("territory_id")
+  slotNumber  Int       @map("slot_number")
+  position    Int
+  assigneeId  String    @map("assignee_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  territory   Territory @relation(fields: [territoryId], references: [id], onDelete: Cascade)
+  assignee    Assignee  @relation(fields: [assigneeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assigneeId])
+  @@unique([userId, territoryId, slotNumber, position])
+  @@index([territoryId])
+  @@index([assigneeId])
+  @@map("slot_assignments")
+}
+
+model PartnerAssignment {
+  id           Int       @id @default(autoincrement())
+  territoryId  Int       @map("territory_id")
+  slotNumber   Int       @map("slot_number")
+  partnerPair  String    @map("partner_pair") @db.VarChar(120)
+  assignedById String    @map("assigned_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  territory    Territory @relation(fields: [territoryId], references: [id], onDelete: Cascade)
+  assignedBy   User      @relation("AssignedBy", fields: [assignedById], references: [id], onDelete: Cascade)
+
+  @@unique([territoryId, slotNumber])
+  @@index([assignedById])
+  @@map("partner_assignments")
+}
