@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { encryptTerritoryPayloadForUser, getTransportSecret } from "@/lib/territory-transport";
+import { encryptTerritoryPayloadForUser } from "@/lib/territory-transport";
 
 function sortZoomTerritoriesNaturally<
   T extends {
@@ -28,7 +28,7 @@ function sortZoomTerritoriesNaturally<
   });
 }
 
-export async function GET(request: Request) {
+export async function GET() {
   const session = await auth.api.getSession({
     headers: await headers(),
   });
@@ -58,29 +58,11 @@ export async function GET(request: Request) {
   });
   const sortedAreas = sortZoomTerritoriesNaturally(areas);
 
-  const isPlainMode = new URL(request.url).searchParams.get("plain") === "1";
-
-  if (isPlainMode) {
-    return NextResponse.json(
-      {
-        areas: sortedAreas,
-      },
-      {
-        headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-          Pragma: "no-cache",
-          Expires: "0",
-        },
-      },
-    );
-  }
-
   const encryptedPayload = encryptTerritoryPayloadForUser(session.user.id, { areas: sortedAreas });
 
   return NextResponse.json(
     {
       payload: encryptedPayload,
-      transportKey: getTransportSecret(),
       encryptionUserId: session.user.id,
     },
     {

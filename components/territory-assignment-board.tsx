@@ -63,12 +63,7 @@ const THEME_STORAGE_KEY = "partnership_app:theme";
 
 type EncryptedTerritoriesResponse = {
   payload: string;
-  transportKey?: string;
   encryptionUserId?: string;
-};
-
-type PlainTerritoriesResponse = {
-  areas: Area[];
 };
 
 type DecryptedTerritoriesPayload = {
@@ -100,13 +95,7 @@ function normalizeSecret(secret: string) {
   return secret.trim().replace(/^['"]+|['"]+$/g, "");
 }
 
-function getTransportSecret(overrideSecret?: string) {
-  const fromResponse =
-    typeof overrideSecret === "string" ? normalizeSecret(overrideSecret) : "";
-  if (fromResponse) {
-    return fromResponse;
-  }
-
+function getTransportSecret() {
   const secret = process.env.NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY;
   const normalized = typeof secret === "string" ? normalizeSecret(secret) : "";
   if (!normalized) {
@@ -132,11 +121,11 @@ function base64ToBytes(base64: string) {
   return bytes;
 }
 
-async function deriveTransportKey(userId: string, overrideSecret?: string) {
+async function deriveTransportKey(userId: string) {
   const encoder = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.importKey(
     "raw",
-    encoder.encode(`${getTransportSecret(overrideSecret)}:${userId}`),
+    encoder.encode(`${getTransportSecret()}:${userId}`),
     "PBKDF2",
     false,
     ["deriveKey"],
@@ -159,31 +148,9 @@ async function deriveTransportKey(userId: string, overrideSecret?: string) {
   );
 }
 
-function buildTransportSecretCandidates(overrideSecret?: string) {
-  const candidates = new Set<string>();
-
-  if (typeof overrideSecret === "string") {
-    const normalized = normalizeSecret(overrideSecret);
-    if (normalized) {
-      candidates.add(normalized);
-    }
-  }
-
-  const fromEnv =
-    typeof process.env.NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY === "string"
-      ? normalizeSecret(process.env.NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY)
-      : "";
-  if (fromEnv) {
-    candidates.add(fromEnv);
-  }
-
-  return Array.from(candidates);
-}
-
 async function decryptTerritoryPayload(
   userId: string,
   raw: string,
-  transportKeyOverride?: string,
 ): Promise<DecryptedTerritoriesPayload | null> {
   if (!raw.startsWith("enc:")) {
     try {
@@ -204,25 +171,20 @@ async function decryptTerritoryPayload(
 
   const iv = packed.slice(0, 12);
   const cipherAndTag = packed.slice(12);
-  const candidates = buildTransportSecretCandidates(transportKeyOverride);
 
-  for (const candidate of candidates) {
-    try {
-      const key = await deriveTransportKey(userId, candidate);
-      const decrypted = await window.crypto.subtle.decrypt(
-        { name: "AES-GCM", iv },
-        key,
-        cipherAndTag,
-      );
+  try {
+    const key = await deriveTransportKey(userId);
+    const decrypted = await window.crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      key,
+      cipherAndTag,
+    );
 
-      const text = new TextDecoder().decode(decrypted);
-      return JSON.parse(text) as DecryptedTerritoriesPayload;
-    } catch {
-      // Try next candidate.
-    }
+    const text = new TextDecoder().decode(decrypted);
+    return JSON.parse(text) as DecryptedTerritoriesPayload;
+  } catch {
+    return null;
   }
-
-  return null;
 }
 
 function generateAssigneeId() {
@@ -440,10 +402,11 @@ export function TerritoryAssignmentBoard({
       setLoadError("");
 
       try {
-        const canDecryptInBrowser = Boolean(window.crypto?.subtle);
-        const endpoint = canDecryptInBrowser ? "/api/territories" : "/api/territories?plain=1";
+        if (!window.crypto?.subtle) {
+          throw new Error("This browser cannot decrypt territory data.");
+        }
 
-        const response = await fetch(endpoint, {
+        const response = await fetch("/api/territories", {
           method: "GET",
           cache: "no-store",
         });
@@ -452,18 +415,10 @@ export function TerritoryAssignmentBoard({
           throw new Error(`Failed to load territories (${response.status})`);
         }
 
-        if (!canDecryptInBrowser) {
-          const plain = (await response.json()) as PlainTerritoriesResponse;
-          setAreas(plain.areas);
-          setOpenAreas({});
-          return;
-        }
-
         const body = (await response.json()) as EncryptedTerritoriesResponse;
         const decrypted = await decryptTerritoryPayload(
           body.encryptionUserId ?? currentUserId,
           body.payload,
-          body.transportKey,
         );
 
         if (!decrypted) {

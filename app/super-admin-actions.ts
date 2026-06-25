@@ -1,10 +1,10 @@
 "use server";
 
-import { hashPassword } from "better-auth/crypto";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
 import { auth } from "@/lib/auth";
+import { hashPasswordForStorage } from "@/lib/password-storage";
 import { prisma } from "@/lib/prisma";
 
 const USER_ROLES = new Set(["user", "super_admin"]);
@@ -75,7 +75,7 @@ export async function createDatabaseUser(formData: FormData) {
   const name = getRequiredText(formData, "name");
   const password = getRequiredText(formData, "password");
   const role = normalizeRole(getRequiredText(formData, "role"));
-  const passwordHash = await hashPassword(password);
+  const passwordHash = await hashPasswordForStorage(password);
 
   await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
@@ -144,7 +144,7 @@ export async function updateDatabaseUser(formData: FormData) {
     await assertCanRemoveSuperAdminRole(userId);
   }
 
-  const passwordHash = password ? await hashPassword(password) : null;
+  const passwordHash = password ? await hashPasswordForStorage(password) : null;
 
   await prisma.$transaction(async (tx) => {
     await tx.user.update({

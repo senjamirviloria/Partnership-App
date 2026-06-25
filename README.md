@@ -106,6 +106,7 @@ Notes:
   - `SUPER_ADMIN_NAME` (defaults to `Super Admin`)
   - `SUPER_ADMIN_PASSWORD` (defaults to the local super admin password)
   - `SEED_AREAS_JSON_FILE` (defaults locally to `seed-territories.local.json`)
+  - `PASSWORD_HASH_ENCRYPTION_KEY` (required to encrypt stored password hashes)
 
 ## Territory Seed Data
 
@@ -161,7 +162,9 @@ Because `seed-territories.local.json` is ignored by git, create or copy it from 
 
 ## Notes
 
-- Passwords are securely handled by Better Auth in the `accounts` table.
+- Passwords are hashed by Better Auth and the stored password hashes are encrypted in MySQL.
+- Sessions expire after 1 day.
+- Keep `PASSWORD_HASH_ENCRYPTION_KEY` stable. If it is lost or changed, existing encrypted password hashes cannot be verified and users must reset passwords or be reseeded.
 - Seed user identities and passwords are local configuration and should not be committed.
 - The `users` table contains identity fields (`username`, `name`, `email`).
 - Re-running `npm run db:seed` updates area/territory master data from `SEED_AREAS_JSON_FILE` without clearing existing partner assignments.

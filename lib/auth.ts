@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 
+import { hashPasswordForStorage, verifyPasswordFromStorage } from "@/lib/password-storage";
 import { prisma } from "@/lib/prisma";
 
 function normalizeOrigin(value: string) {
@@ -39,6 +40,13 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    password: {
+      hash: hashPasswordForStorage,
+      verify: verifyPasswordFromStorage,
+    },
+  },
+  session: {
+    expiresIn: 60 * 60 * 24,
   },
   user: {
     additionalFields: {

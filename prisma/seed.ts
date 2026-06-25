@@ -1,7 +1,8 @@
 import { PrismaClient } from "@prisma/client";
-import { hashPassword } from "better-auth/crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+
+import { hashPasswordForStorage, isEncryptedPasswordHash, encryptPasswordHash } from "../lib/password-storage";
 
 const prisma = new PrismaClient();
 
@@ -192,7 +193,7 @@ async function ensureCredentialUser({
     },
   });
 
-  const passwordHash = await hashPassword(password);
+  const passwordHash = await hashPasswordForStorage(password);
   const credentialAccount = await prisma.account.findFirst({
     where: {
       userId: user.id,
@@ -259,11 +260,38 @@ async function ensureSuperAdmin() {
   });
 }
 
+async function encryptExistingCredentialPasswordHashes() {
+  const credentialAccounts = await prisma.account.findMany({
+    where: {
+      providerId: "credential",
+      password: {
+        not: null,
+      },
+    },
+    select: {
+      id: true,
+      password: true,
+    },
+  });
+
+  for (const account of credentialAccounts) {
+    if (!account.password || isEncryptedPasswordHash(account.password)) {
+      continue;
+    }
+
+    await prisma.account.update({
+      where: { id: account.id },
+      data: { password: encryptPasswordHash(account.password) },
+    });
+  }
+}
+
 async function main() {
   await ensureSuperAdmin();
   await ensureDefaultAdmin();
   await ensureDefaultDtaqUser();
   await ensureSeedUser();
+  await encryptExistingCredentialPasswordHashes();
 
   for (const areaSeed of seedData) {
     const area = await prisma.area.upsert({
