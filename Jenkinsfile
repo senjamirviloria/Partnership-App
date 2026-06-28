@@ -19,6 +19,7 @@ pipeline {
       steps {
         sh '''#!/bin/sh
 set -eu
+git config --global --add safe.directory "$DEPLOY_DIR"
 cd "$DEPLOY_DIR"
 git fetch origin develop
 git checkout -B develop origin/develop
