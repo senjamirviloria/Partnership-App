@@ -3,6 +3,7 @@ services:
     image: mysql:8.4
     container_name: partnerships-db
     platform: linux/arm64/v8
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: partnerships_db
