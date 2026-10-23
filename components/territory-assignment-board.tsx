@@ -255,7 +255,7 @@ export function TerritoryAssignmentBoard({
   const [saveFailed, setSaveFailed] = useState(false);
   const [territoryFilter, setTerritoryFilter] = useState("");
   const [paneAssigneeFilter, setPaneAssigneeFilter] = useState("");
-  const [paneAssigneeStatus, setPaneAssigneeStatus] = useState("all");
+  const [paneAssigneeStatus, setPaneAssigneeStatus] = useState("available");
   const [status, setStatus] = useState<string>("");
   const [areas, setAreas] = useState<Area[]>([]);
   const [isLoadingAreas, setIsLoadingAreas] = useState(true);
@@ -412,6 +412,13 @@ export function TerritoryAssignmentBoard({
   const selectedAssigneeIdsForBulkAssign = bulkAssigneeIds.filter((id) => availableAssignees.some((assignee) => assignee.id === id));
 
   const visibleAssignees = assignees.filter((assignee) => assignee.name.toLowerCase().includes(paneAssigneeFilter.trim().toLowerCase()) && (paneAssigneeStatus === "all" || (paneAssigneeStatus === "assigned" ? assignedAssigneeIds.has(assignee.id) : !assignedAssigneeIds.has(assignee.id))));
+
+  let assigneeEmptyMessage = "No assignees match your filters.";
+  if (!assignees.length) {
+    assigneeEmptyMessage = "Add your first assignee above.";
+  } else if (paneAssigneeStatus === "available" && !availableAssignees.length && !paneAssigneeFilter.trim()) {
+    assigneeEmptyMessage = "All assignees are assigned. View them in Partner Pairs or change the filter above.";
+  }
 
   const canAssignMultiple =
     availableAssignees.length > 0 && selectedAssigneeIdsForBulkAssign.length > 0;
@@ -1315,9 +1322,9 @@ export function TerritoryAssignmentBoard({
           </div>
 
           <input className="panel-search" aria-label="Search assignees" placeholder="Search assignees…" value={paneAssigneeFilter} onChange={(event) => setPaneAssigneeFilter(event.target.value)} />
-          <label className="block mb-3 text-xs text-muted">Show assignees<select className="panel-search mt-1" aria-label="Filter assignees" value={paneAssigneeStatus} onChange={(event) => setPaneAssigneeStatus(event.target.value)}><option value="all">All assignees</option><option value="available">Available</option><option value="assigned">Assigned</option></select></label>
+          <label className="block mb-3 text-xs text-muted">Show assignees<select className="panel-search mt-1" aria-label="Filter assignees" value={paneAssigneeStatus} onChange={(event) => setPaneAssigneeStatus(event.target.value)}><option value="available">Available</option><option value="all">All assignees</option><option value="assigned">Assigned</option></select></label>
           <p className="panel-summary">{assignees.length} people · {availableAssignees.length} available</p>
-          {visibleAssignees.length === 0 && <p className="text-muted py-3 text-sm">{assignees.length ? "No assignees match your filters." : "Add your first assignee above."}</p>}
+          {visibleAssignees.length === 0 && <p className="text-muted py-3 text-sm">{assigneeEmptyMessage}</p>}
           <div className={isAssigneesMaximized ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "space-y-2"}>
             {visibleAssignees.map((assignee) => {
               const isEditingThis = editingAssigneeId === assignee.id;

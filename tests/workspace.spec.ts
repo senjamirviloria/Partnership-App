@@ -281,6 +281,8 @@ test("mobile assignment, bulk automation, saves, failures, and account isolation
   await openTab(page, "Partner Pairs");
   await expect(pairs.locator('[draggable="true"]')).toHaveCount(3);
   await openTab(page, "Assignees");
+  await expect(assignees.getByRole("combobox", { name: "Filter assignees" })).toHaveValue("available");
+  await expect(assignees.locator('[draggable="true"]')).toHaveCount(0);
   await assignees
     .getByPlaceholder("Enter assignee name")
     .fill("Retained After Failure");
@@ -384,6 +386,17 @@ test("manual editing, bulk assignment, dragging, clipboard, fullscreen, and rese
   const dropZone = pairs.locator('[style="border-style: dashed;"]').nth(1);
   await dragSource.dragTo(dropZone);
   await expect(pairs.locator('[draggable="true"]')).toHaveCount(3);
+  await expect(assignees.getByRole("combobox", { name: "Filter assignees" })).toHaveValue("available");
+  await expect(dragSource).toHaveCount(0);
+  await expect(assignees.getByText("Manual Edited", { exact: true })).toHaveCount(0);
+  await expect(pairs.getByText("Drag Person", { exact: true })).toBeVisible();
+  await expect(assignees.getByText("All assignees are assigned.", { exact: false })).toBeVisible();
+  await assignees.getByRole("combobox", { name: "Filter assignees" }).selectOption("all");
+  await expect(dragSource).toBeVisible();
+  await assignees.getByRole("combobox", { name: "Filter assignees" }).selectOption("assigned");
+  await expect(dragSource).toBeVisible();
+  await assignees.getByRole("combobox", { name: "Filter assignees" }).selectOption("available");
+  await expect(dragSource).toHaveCount(0);
   await pairs.getByPlaceholder("Add new assignee").nth(1).fill("Inline Person");
   await pairs
     .locator(".slot-create-form")
