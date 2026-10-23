@@ -6,6 +6,7 @@ import { headers } from "next/headers";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { decryptTransportPayloadForUser, encryptTransportPayloadForUser } from "@/lib/territory-transport";
 
 type SubmittedAssignments = Record<number, string[]>;
 type BoardSlotAssignments = Record<number, string[][]>;
@@ -20,6 +21,12 @@ type SaveBoardStateInput = {
   selectedTerritories: number[];
   slotAssignmentsByTerritory: BoardSlotAssignments;
   assignees: SubmittedAssignee[];
+};
+
+type EncryptedBoardInput = {
+  selectedTerritories?: number[];
+  slotAssignmentsByTerritory?: BoardSlotAssignments;
+  assignees?: SubmittedAssignee[];
 };
 
 function normalizeGender(value: unknown): AssigneeGender {
@@ -52,6 +59,22 @@ function normalizeAssignees(assignees: SubmittedAssignee[]) {
 
 function normalizeTerritoryIds(territoryIds: number[]) {
   return [...new Set(territoryIds)].filter((id) => Number.isInteger(id) && id > 0);
+}
+
+function decryptBoardInput(userId: string, encryptedInput: string): SaveBoardStateInput {
+  const input = decryptTransportPayloadForUser<EncryptedBoardInput>(userId, encryptedInput);
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("Invalid encrypted board state payload.");
+  }
+
+  return {
+    selectedTerritories: Array.isArray(input.selectedTerritories) ? input.selectedTerritories : [],
+    slotAssignmentsByTerritory:
+      input.slotAssignmentsByTerritory && typeof input.slotAssignmentsByTerritory === "object"
+        ? input.slotAssignmentsByTerritory
+        : {},
+    assignees: Array.isArray(input.assignees) ? input.assignees : [],
+  };
 }
 
 async function getCurrentUserId() {
@@ -110,23 +133,27 @@ export async function loadBoardState() {
 
   return {
     ok: true as const,
-    state: {
-      selectedTerritories: selectedTerritories.map((item) => item.territoryId),
-      slotAssignmentsByTerritory,
-      assignees: assignees.map((assignee) => ({
-        ...assignee,
-        gender: assignee.gender === AssigneeGender.female ? "female" : "male",
-      })),
-    },
+    payload: encryptTransportPayloadForUser(userId, {
+      state: {
+        selectedTerritories: selectedTerritories.map((item) => item.territoryId),
+        slotAssignmentsByTerritory,
+        assignees: assignees.map((assignee) => ({
+          ...assignee,
+          gender: assignee.gender === AssigneeGender.female ? "female" : "male",
+        })),
+      },
+    }),
+    encryptionUserId: userId,
   };
 }
 
-export async function saveBoardState(input: SaveBoardStateInput) {
+export async function saveBoardState(encryptedInput: string) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return { ok: false, message: "You must be logged in to save assignments." };
   }
 
+  const input = decryptBoardInput(userId, encryptedInput);
   const assignees = normalizeAssignees(input.assignees ?? []);
   const assigneeIds = assignees.map((assignee) => assignee.id);
   const assigneeIdSet = new Set(assigneeIds);
@@ -268,6 +295,8 @@ export async function saveBoardState(input: SaveBoardStateInput) {
   });
 
   revalidatePath("/");
+  revalidatePath("/workspace");
+  revalidatePath("/admin", "layout");
   return { ok: true, message: "Saved to database." };
 }
 
@@ -358,5 +387,7 @@ export async function savePartnerAssignments(
   });
 
   revalidatePath("/");
+  revalidatePath("/workspace");
+  revalidatePath("/admin", "layout");
   return { ok: true, message: "Assignments saved." };
 }

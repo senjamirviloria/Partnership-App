@@ -1,19 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState, type DragEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 import Icon from "@mdi/react";
 import {
   mdiFullscreen,
   mdiFullscreenExit,
   mdiHumanFemale,
   mdiHumanMale,
-  mdiWeatherNight,
-  mdiWhiteBalanceSunny,
 } from "@mdi/js";
 
 import { loadBoardState, saveBoardState } from "@/app/actions";
-import { authClient } from "@/lib/auth-client";
+import { Modal } from "@/components/modal";
+import { useUnsavedBoard, useFullscreenPanel } from "@/components/use-board-guards";
 
 type Territory = {
   id: number;
@@ -59,15 +57,24 @@ type MaximizedPanel = "territories" | "assignees" | "pairs" | null;
 
 const TRANSPORT_SALT = "territory-api-transport-v1";
 const TRANSPORT_ITERATIONS = 120000;
-const THEME_STORAGE_KEY = "partnership_app:theme";
+
 
 type EncryptedTerritoriesResponse = {
   payload: string;
   encryptionUserId?: string;
 };
 
+type EncryptedBoardStateResponse = {
+  payload: string;
+  encryptionUserId?: string;
+};
+
 type DecryptedTerritoriesPayload = {
   areas: Area[];
+};
+
+type DecryptedBoardStatePayload = {
+  state: BoardState;
 };
 
 function buildDefaultSlotAssignments(areas: Area[]): SlotAssignmentsByTerritory {
@@ -121,7 +128,15 @@ function base64ToBytes(base64: string) {
   return bytes;
 }
 
-async function deriveTransportKey(userId: string) {
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+  return btoa(binary);
+}
+
+async function deriveTransportKey(userId: string, usages: KeyUsage[]) {
   const encoder = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.importKey(
     "raw",
@@ -144,20 +159,16 @@ async function deriveTransportKey(userId: string) {
       length: 256,
     },
     false,
-    ["decrypt"],
+    usages,
   );
 }
 
-async function decryptTerritoryPayload(
+async function decryptTransportPayload<T>(
   userId: string,
   raw: string,
-): Promise<DecryptedTerritoriesPayload | null> {
+): Promise<T | null> {
   if (!raw.startsWith("enc:")) {
-    try {
-      return JSON.parse(raw) as DecryptedTerritoriesPayload;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   if (!window.crypto?.subtle) {
@@ -173,7 +184,7 @@ async function decryptTerritoryPayload(
   const cipherAndTag = packed.slice(12);
 
   try {
-    const key = await deriveTransportKey(userId);
+    const key = await deriveTransportKey(userId, ["decrypt"]);
     const decrypted = await window.crypto.subtle.decrypt(
       { name: "AES-GCM", iv },
       key,
@@ -181,10 +192,35 @@ async function decryptTerritoryPayload(
     );
 
     const text = new TextDecoder().decode(decrypted);
-    return JSON.parse(text) as DecryptedTerritoriesPayload;
+    return JSON.parse(text) as T;
   } catch {
     return null;
   }
+}
+
+async function encryptTransportPayload(userId: string, payload: unknown) {
+  if (!window.crypto?.subtle) {
+    throw new Error("This browser cannot encrypt board data.");
+  }
+
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveTransportKey(userId, ["encrypt"]);
+  const serialized = new TextEncoder().encode(JSON.stringify(payload));
+  const encrypted = new Uint8Array(
+    await window.crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      serialized,
+    ),
+  );
+  const packed = new Uint8Array(iv.length + encrypted.length);
+  packed.set(iv, 0);
+  packed.set(encrypted, iv.length);
+  return `enc:${bytesToBase64(packed)}`;
+}
+
+async function decryptTerritoryPayload(userId: string, raw: string) {
+  return decryptTransportPayload<DecryptedTerritoriesPayload>(userId, raw);
 }
 
 function generateAssigneeId() {
@@ -202,12 +238,24 @@ function toggleGender(gender: Gender): Gender {
   return gender === "male" ? "female" : "male";
 }
 
+const randomIndex = (length: number) => Math.floor(Math.random() * length);
+
+const panelTabs = [
+  { id: "territories", label: "Territories" },
+  { id: "assignees", label: "Assignees" },
+  { id: "pairs", label: "Partner Pairs" },
+] as const;
+
 export function TerritoryAssignmentBoard({
   currentUserId,
   currentUserName,
 }: Props) {
-  const router = useRouter();
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [activeTab, setActiveTab] = useState<"territories" | "assignees" | "pairs">("territories");
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [territoryFilter, setTerritoryFilter] = useState("");
+  const [paneAssigneeFilter, setPaneAssigneeFilter] = useState("");
+  const [paneAssigneeStatus, setPaneAssigneeStatus] = useState("all");
   const [status, setStatus] = useState<string>("");
   const [areas, setAreas] = useState<Area[]>([]);
   const [isLoadingAreas, setIsLoadingAreas] = useState(true);
@@ -223,7 +271,7 @@ export function TerritoryAssignmentBoard({
   const [editingAssigneeId, setEditingAssigneeId] = useState<string | null>(null);
   const [editingAssigneeName, setEditingAssigneeName] = useState("");
   const [selectedAssigneeId, setSelectedAssigneeId] = useState<string | null>(null);
-  const [selectedAssigneeIdsForBulkAssign, setSelectedAssigneeIdsForBulkAssign] = useState<string[]>([]);
+  const [bulkAssigneeIds, setSelectedAssigneeIdsForBulkAssign] = useState<string[]>([]);
   const [slotDraftNames, setSlotDraftNames] = useState<Record<string, string>>({});
   const [slotDraftGenders, setSlotDraftGenders] = useState<Record<string, Gender>>({});
   const [assignModalAssigneeIds, setAssignModalAssigneeIds] = useState<string[]>([]);
@@ -234,6 +282,16 @@ export function TerritoryAssignmentBoard({
   const [maximizedPanel, setMaximizedPanel] = useState<MaximizedPanel>(null);
   const [partnerPairSearchQuery, setPartnerPairSearchQuery] = useState("");
   const [openPairLocationTerritories, setOpenPairLocationTerritories] = useState<Record<number, boolean>>({});
+
+  const boardSnapshot = JSON.stringify({ selectedTerritories, slotAssignmentsByTerritory, assignees });
+  const isDirty = savedSnapshot !== null && boardSnapshot !== savedSnapshot;
+  const saveDisabled = isLoadingAreas || isLoadingBoard || isSavingBoard || savedSnapshot === null || !!loadError;
+  const saveLabel = saveFailed ? "Save failed — your changes are retained" : isSavingBoard ? "Saving…" : isLoadingAreas || isLoadingBoard ? "Loading…" : loadError ? "Unable to load board" : isDirty ? "Unsaved changes" : "All changes saved";
+  const visibleAreas = areas.map((area) => ({ ...area, territories: area.territories.filter((territory) => `${area.areaName} ${territory.territoryName} ${territory.locations ?? ""}`.toLowerCase().includes(territoryFilter.trim().toLowerCase())) })).filter((area) => area.territories.length > 0);
+
+  useUnsavedBoard(isDirty);
+  const closeFullscreen = useCallback(() => setMaximizedPanel(null), []);
+  useFullscreenPanel(maximizedPanel, closeFullscreen);
 
   const territoryMap = useMemo(() => {
     return new Map(
@@ -351,50 +409,14 @@ export function TerritoryAssignmentBoard({
       });
   }, [assignees, assignedAssigneeIds, assigneeSearchQuery, existingAssigneeFilter]);
 
+  const selectedAssigneeIdsForBulkAssign = bulkAssigneeIds.filter((id) => availableAssignees.some((assignee) => assignee.id === id));
+
+  const visibleAssignees = assignees.filter((assignee) => assignee.name.toLowerCase().includes(paneAssigneeFilter.trim().toLowerCase()) && (paneAssigneeStatus === "all" || (paneAssigneeStatus === "assigned" ? assignedAssigneeIds.has(assignee.id) : !assignedAssigneeIds.has(assignee.id))));
+
   const canAssignMultiple =
     availableAssignees.length > 0 && selectedAssigneeIdsForBulkAssign.length > 0;
   const canAssignAutomatically =
     availableAssignees.length > 0 && selectedAreas.some((area) => area.territories.length > 0);
-
-  useEffect(() => {
-    const availableIds = new Set(availableAssignees.map((assignee) => assignee.id));
-    setSelectedAssigneeIdsForBulkAssign((current) =>
-      current.filter((assigneeId) => availableIds.has(assigneeId)),
-    );
-  }, [availableAssignees]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-
-    const getStoredTheme = () => {
-      const theme = window.localStorage.getItem(THEME_STORAGE_KEY);
-      return theme === "dark" || theme === "light" ? theme : null;
-    };
-
-    const applyTheme = (theme: "dark" | "light" | null) => {
-      const darkActive = theme ? theme === "dark" : media.matches;
-      root.classList.toggle("dark", darkActive);
-      setIsDarkMode(darkActive);
-    };
-
-    applyTheme(getStoredTheme());
-
-    const onMediaChange = (event: MediaQueryListEvent) => {
-      if (!getStoredTheme()) {
-        root.classList.toggle("dark", event.matches);
-        setIsDarkMode(event.matches);
-      }
-    };
-
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", onMediaChange);
-      return () => media.removeEventListener("change", onMediaChange);
-    }
-
-    media.addListener(onMediaChange);
-    return () => media.removeListener(onMediaChange);
-  }, []);
 
   useEffect(() => {
     const loadTerritories = async () => {
@@ -438,13 +460,7 @@ export function TerritoryAssignmentBoard({
   }, [currentUserId]);
 
   useEffect(() => {
-    if (areas.length === 0) {
-      setSelectedTerritories([]);
-      setSlotAssignmentsByTerritory({});
-      setAssignees([]);
-      return;
-    }
-
+    if (isLoadingAreas) return;
     let isActive = true;
 
     const loadFromDatabase = async () => {
@@ -465,7 +481,16 @@ export function TerritoryAssignmentBoard({
           return;
         }
 
-        const parsed = result.state as BoardState;
+        const decrypted = await decryptTransportPayload<DecryptedBoardStatePayload>(
+          result.encryptionUserId ?? currentUserId,
+          (result as EncryptedBoardStateResponse).payload,
+        );
+
+        if (!decrypted) {
+          throw new Error("Unable to decrypt saved board state.");
+        }
+
+        const parsed = decrypted.state;
         const selected = Array.isArray(parsed.selectedTerritories)
           ? parsed.selectedTerritories.filter((territoryId) => territoryMap.has(territoryId))
           : [];
@@ -502,6 +527,7 @@ export function TerritoryAssignmentBoard({
         setSelectedTerritories(selected);
         setSlotAssignmentsByTerritory(mergedSlots);
         setAssignees(savedAssignees);
+        setSavedSnapshot(JSON.stringify({ selectedTerritories: selected, slotAssignmentsByTerritory: mergedSlots, assignees: savedAssignees }));
       } catch (error) {
         if (!isActive) {
           return;
@@ -522,7 +548,7 @@ export function TerritoryAssignmentBoard({
     return () => {
       isActive = false;
     };
-  }, [areas, currentUserId, territoryMap]);
+  }, [areas, currentUserId, territoryMap, isLoadingAreas]);
 
   const toggleTerritory = (territoryId: number) => {
     setSelectedTerritories((current) =>
@@ -862,7 +888,7 @@ export function TerritoryAssignmentBoard({
             continue;
           }
 
-          const selectedGender = eligibleGenders[Math.floor(Math.random() * eligibleGenders.length)];
+          const selectedGender = eligibleGenders[randomIndex(eligibleGenders.length)];
           for (let count = 0; count < 2; count += 1) {
             const nextAssigneeId = byGender[selectedGender].shift();
             if (!nextAssigneeId) break;
@@ -968,21 +994,24 @@ export function TerritoryAssignmentBoard({
   };
 
   const onSave = async () => {
+    if (savedSnapshot === null || isLoadingAreas || isLoadingBoard) return false;
     setIsSavingBoard(true);
+    setSaveFailed(false);
+    const submittedState = { selectedTerritories, slotAssignmentsByTerritory, assignees };
     try {
-      const result = await saveBoardState({
-        selectedTerritories,
-        slotAssignmentsByTerritory,
-        assignees,
-      });
+      const encryptedInput = await encryptTransportPayload(currentUserId, submittedState);
+      const result = await saveBoardState(encryptedInput);
 
       if (!result.ok) {
+        setSaveFailed(true);
         setStatus(result.message);
         return false;
       }
 
+      setSavedSnapshot(JSON.stringify(submittedState));
       return true;
     } catch (error) {
+      setSaveFailed(true);
       setStatus(error instanceof Error ? error.message : "Unable to save to database.");
       return false;
     } finally {
@@ -1078,19 +1107,6 @@ export function TerritoryAssignmentBoard({
     }
   };
 
-  const onSignOut = async () => {
-    await authClient.signOut();
-    router.push("/login");
-    router.refresh();
-  };
-
-  const onToggleTheme = () => {
-    const nextTheme = isDarkMode ? "light" : "dark";
-    document.documentElement.classList.toggle("dark", nextTheme === "dark");
-    window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
-    setIsDarkMode(nextTheme === "dark");
-  };
-
   const onShowAllPairLocations = () => {
     const next: Record<number, boolean> = {};
     for (const area of selectedAreas) {
@@ -1108,12 +1124,12 @@ export function TerritoryAssignmentBoard({
   const getPanelClassName = (isMaximized: boolean) =>
     isMaximized
       ? "fixed inset-0 z-50 overflow-y-auto bg-white dark:bg-gray-950 p-4 sm:p-6"
-      : "w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 lg:w-1/3 lg:min-w-0";
+      : "board-panel min-w-0";
 
   const getPanelHeaderClassName = (isMaximized: boolean) =>
     isMaximized
       ? "sticky top-0 z-10 -mx-4 -mt-4 mb-4 flex items-center justify-between gap-3 border-b border-gray-200 dark:border-gray-800 bg-white/95 dark:bg-gray-950/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:-mt-6 sm:px-6"
-      : "mb-3 flex items-center justify-between gap-2";
+      : "panel-heading";
 
   const getMaximizeButton = (panel: Exclude<MaximizedPanel, null>, label: string) => {
     const isMaximized = maximizedPanel === panel;
@@ -1136,30 +1152,16 @@ export function TerritoryAssignmentBoard({
   const isPairsMaximized = maximizedPanel === "pairs";
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Territory Partner Assignment</h1>
-          <p className="text-sm text-gray-600 dark:text-gray-300">Signed in as {currentUserName}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onToggleTheme}
-            className="rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-900"
-            aria-label={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
-            title={isDarkMode ? "Dark mode enabled" : "Light mode enabled"}
-          >
-            <Icon path={isDarkMode ? mdiWeatherNight : mdiWhiteBalanceSunny} size={0.85} aria-hidden />
-          </button>
-          <button
-            onClick={onSignOut}
-            className="rounded-md border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800 dark:bg-gray-900"
-          >
-            Sign out
-          </button>
-        </div>
+    <main className="assignment-workspace">
+      <div className="page-heading"><div><p className="eyebrow">My workspace</p><h1>Assignment board</h1><p>Choose territories, add assignees, and organize pairs.</p><span className="sr-only">Signed in as {currentUserName}</span></div>
+        <div className="desktop-save"><span className="text-muted text-sm" role="status">{saveLabel}</span><button className="button-primary" disabled={saveDisabled} onClick={onSaveAssignments}>{isSavingBoard ? "Saving…" : "Save assignments"}</button></div>
       </div>
-
+      <div className="board-tabs" role="tablist" aria-label="Assignment panels">
+        {panelTabs.map((tab, index) => <button key={tab.id} type="button" id={`tab-${tab.id}`} role="tab" aria-selected={activeTab === tab.id} aria-controls={`panel-${tab.id}`} tabIndex={activeTab === tab.id ? 0 : -1} onClick={() => setActiveTab(tab.id)} onKeyDown={(event) => {
+          const nextIndex = event.key === "ArrowRight" ? (index + 1) % 3 : event.key === "ArrowLeft" ? (index + 2) % 3 : event.key === "Home" ? 0 : event.key === "End" ? 2 : null;
+          if (nextIndex !== null) { event.preventDefault(); setActiveTab(panelTabs[nextIndex].id); document.getElementById(`tab-${panelTabs[nextIndex].id}`)?.focus(); }
+        }}>{tab.label}</button>)}
+      </div>
       {isLoadingAreas && (
         <div className="mb-4 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 text-sm text-gray-600 dark:text-gray-300">
           Loading territories...
@@ -1178,10 +1180,10 @@ export function TerritoryAssignmentBoard({
         </div>
       )}
 
-      <section className="mx-auto flex w-full max-w-[1400px] flex-col gap-6 lg:flex-row lg:justify-center lg:items-start">
-        <div className={getPanelClassName(isTerritoriesMaximized)}>
+      <section className="board-columns" aria-label="Assignment workspace">
+        <div id="panel-territories" role={isTerritoriesMaximized ? "dialog" : "tabpanel"} aria-modal={isTerritoriesMaximized || undefined} aria-labelledby="tab-territories" tabIndex={0} inert={isLoadingAreas || isLoadingBoard || !!loadError} data-active={activeTab === "territories"} className={`${getPanelClassName(isTerritoriesMaximized)} ${isTerritoriesMaximized ? "maximized-panel" : "responsive-panel"}`}>
           <div className={getPanelHeaderClassName(isTerritoriesMaximized)}>
-            <h2 className="text-lg font-semibold">Select Territories</h2>
+            <h2 className="text-lg font-semibold">Territories</h2>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1202,17 +1204,21 @@ export function TerritoryAssignmentBoard({
               {getMaximizeButton("territories", "Select Territories")}
             </div>
           </div>
-          <div className={isTerritoriesMaximized ? "grid gap-4 md:grid-cols-2 xl:grid-cols-3" : "space-y-4"}>
-            {areas.map((area) => {
+          <input className="panel-search" aria-label="Search territories" placeholder="Search territories or locations…" value={territoryFilter} onChange={(event) => setTerritoryFilter(event.target.value)} />
+          <p className="panel-summary">{selectedTerritories.length} territories selected</p>
+          {visibleAreas.length === 0 && !isLoadingAreas && <p className="empty-state">No matching territories.</p>}
+          <div className={isTerritoriesMaximized ? "grid gap-4 md:grid-cols-2 xl:grid-cols-3" : "space-y-3"}>
+            {visibleAreas.map((area) => {
               const hasSelectedInArea = area.territories.some((territory) =>
                 selectedTerritories.includes(territory.id),
               );
-              const isAreaOpen = openAreas[area.id] ?? hasSelectedInArea;
+              const isAreaOpen = territoryFilter.trim() ? true : (openAreas[area.id] ?? hasSelectedInArea);
               return (
                 <div key={area.id} className="rounded-md border border-gray-100 dark:border-gray-800 p-3">
                 <button
                   type="button"
-                  onClick={() => setOpenAreas((current) => ({ ...current, [area.id]: !current[area.id] }))}
+                  aria-expanded={isAreaOpen}
+                  onClick={() => setOpenAreas((current) => ({ ...current, [area.id]: !isAreaOpen }))}
                   className="mb-2 flex w-full items-center justify-between text-left font-semibold"
                 >
                   <span>{area.areaName}</span>
@@ -1252,7 +1258,7 @@ export function TerritoryAssignmentBoard({
           </div>
         </div>
 
-        <div className={getPanelClassName(isAssigneesMaximized)}>
+        <div id="panel-assignees" role={isAssigneesMaximized ? "dialog" : "tabpanel"} aria-modal={isAssigneesMaximized || undefined} aria-labelledby="tab-assignees" tabIndex={0} inert={isLoadingAreas || isLoadingBoard || !!loadError} data-active={activeTab === "assignees"} className={`${getPanelClassName(isAssigneesMaximized)} ${isAssigneesMaximized ? "maximized-panel" : "responsive-panel"}`}>
           <div className={getPanelHeaderClassName(isAssigneesMaximized)}>
             <h2 className="text-lg font-semibold">Assignees</h2>
             {getMaximizeButton("assignees", "Assignees")}
@@ -1302,14 +1308,18 @@ export function TerritoryAssignmentBoard({
             <button
               type="button"
               onClick={onCreateAssignee}
-              className={`${isAssigneesMaximized ? "px-5" : "w-full px-3"} rounded-md border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/40 py-2 text-sm text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40`}
+              className={`${isAssigneesMaximized ? "px-5" : "w-full px-3"} rounded-md border border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 py-2 text-sm text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40`}
             >
               Create
             </button>
           </div>
 
-          <div className={isAssigneesMaximized ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "max-h-[52vh] space-y-2 overflow-y-auto pr-1"}>
-            {availableAssignees.map((assignee) => {
+          <input className="panel-search" aria-label="Search assignees" placeholder="Search assignees…" value={paneAssigneeFilter} onChange={(event) => setPaneAssigneeFilter(event.target.value)} />
+          <label className="block mb-3 text-xs text-muted">Show assignees<select className="panel-search mt-1" aria-label="Filter assignees" value={paneAssigneeStatus} onChange={(event) => setPaneAssigneeStatus(event.target.value)}><option value="all">All assignees</option><option value="available">Available</option><option value="assigned">Assigned</option></select></label>
+          <p className="panel-summary">{assignees.length} people · {availableAssignees.length} available</p>
+          {visibleAssignees.length === 0 && <p className="text-muted py-3 text-sm">{assignees.length ? "No assignees match your filters." : "Add your first assignee above."}</p>}
+          <div className={isAssigneesMaximized ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "space-y-2"}>
+            {visibleAssignees.map((assignee) => {
               const isEditingThis = editingAssigneeId === assignee.id;
               const isSelectedThis = selectedAssigneeId === assignee.id;
               const isCheckedForBulk = selectedAssigneeIdsForBulkAssign.includes(assignee.id);
@@ -1336,6 +1346,7 @@ export function TerritoryAssignmentBoard({
                       onChange={(event) => onToggleBulkAssigneeSelection(assignee.id, event.target.checked)}
                       onClick={(event) => event.stopPropagation()}
                       onMouseDown={(event) => event.stopPropagation()}
+                      disabled={assignedAssigneeIds.has(assignee.id)}
                       aria-label={`Select ${assignee.name} for multiple assignment`}
                     />
                     <span className="text-gray-500 dark:text-gray-400" onClick={(event) => event.stopPropagation()}>
@@ -1369,7 +1380,7 @@ export function TerritoryAssignmentBoard({
                         >
                           <Icon path={genderIcon} size={0.65} aria-hidden />
                         </button>
-                        <span className="truncate">{assignee.name}</span>
+                        <span className="min-w-0"><span className="block truncate">{assignee.name}</span><span className="block text-[10px] text-muted">{assignedAssigneeIds.has(assignee.id) ? "Assigned" : "Available"}</span></span>
                       </span>
                     )}
                   </div>
@@ -1406,7 +1417,7 @@ export function TerritoryAssignmentBoard({
                         <button
                           type="button"
                           onClick={() => onOpenAssignModalFromPane(assignee.id)}
-                          className="rounded border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-2 py-1 text-xs text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40"
+                          className="rounded border border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 px-2 py-1 text-xs text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40"
                         >
                           Assign
                         </button>
@@ -1435,7 +1446,7 @@ export function TerritoryAssignmentBoard({
             <button
               type="button"
               onClick={onSaveAssignees}
-              disabled={isLoadingBoard || isSavingBoard}
+              disabled={saveDisabled}
               className="rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSavingBoard ? "Saving..." : "Save assignees"}
@@ -1452,7 +1463,7 @@ export function TerritoryAssignmentBoard({
               type="button"
               onClick={onOpenAssignMultiple}
               disabled={!canAssignMultiple}
-              className="rounded-md border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-3 py-2 text-sm text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 px-3 py-2 text-sm text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Assign Multiple
             </button>
@@ -1460,16 +1471,16 @@ export function TerritoryAssignmentBoard({
               type="button"
               onClick={onAssignAutomatically}
               disabled={!canAssignAutomatically}
-              className="rounded-md border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-3 py-2 text-sm text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 px-3 py-2 text-sm text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Assign Automatically
             </button>
           </div>
         </div>
 
-        <div className={getPanelClassName(isPairsMaximized)}>
+        <div id="panel-pairs" role={isPairsMaximized ? "dialog" : "tabpanel"} aria-modal={isPairsMaximized || undefined} aria-labelledby="tab-pairs" tabIndex={0} inert={isLoadingAreas || isLoadingBoard || !!loadError} data-active={activeTab === "pairs"} className={`${getPanelClassName(isPairsMaximized)} ${isPairsMaximized ? "maximized-panel" : "responsive-panel"}`}>
           <div className={getPanelHeaderClassName(isPairsMaximized)}>
-            <h2 className="text-lg font-semibold">Assign Partner Pairs</h2>
+            <h2 className="text-lg font-semibold">Partner Pairs</h2>
             {getMaximizeButton("pairs", "Assign Partner Pairs")}
           </div>
           <div
@@ -1506,7 +1517,7 @@ export function TerritoryAssignmentBoard({
             </div>
           </div>
           {selectedAreas.length === 0 && (
-            <p className="text-sm text-gray-600 dark:text-gray-300">Choose territories on the left to assign partners.</p>
+            <p className="text-sm text-gray-600 dark:text-gray-300">Choose territories in the Territories panel to assign partners.</p>
           )}
           {selectedAreas.length > 0 && filteredSelectedAreasForPairs.length === 0 && (
             <p className="text-sm text-gray-600 dark:text-gray-300">No partner pairs match your search.</p>
@@ -1571,14 +1582,14 @@ export function TerritoryAssignmentBoard({
                                     isOverPairCapacity
                                       ? "border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/25"
                                       : isPairComplete
-                                        ? "border-green-200 bg-green-50/70 dark:border-green-900 dark:bg-green-950/20"
+                                        ? "border-teal-200 bg-teal-50/70 dark:border-teal-900 dark:bg-teal-950/20"
                                       : "border-gray-400 bg-gray-50 dark:bg-gray-900"
                                   }`}
                                   style={{ borderStyle: "dashed" }}
                                 >
                                   {slotAssigneeIds.length === 0 && (
                                     <div className="flex min-h-[56px] items-center justify-center rounded-md border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2">
-                                      <p className="text-xs text-gray-500 dark:text-gray-400">Drag assignees here or add below</p>
+                                      <p className="text-xs text-gray-500 dark:text-gray-400">Add an assignee below or drag one here</p>
                                     </div>
                                   )}
                                   {isOverPairCapacity && (
@@ -1683,7 +1694,7 @@ export function TerritoryAssignmentBoard({
                                                   event.stopPropagation();
                                                   onOpenAssignModalForAssignees([assigneeId]);
                                                 }}
-                                                className="rounded border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-1 py-0.5 text-[10px] text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40"
+                                                className="rounded border border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 px-1 py-0.5 text-[10px] text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40"
                                               >
                                                 Assign
                                               </button>
@@ -1713,7 +1724,7 @@ export function TerritoryAssignmentBoard({
                                       );
                                     })}
                                   </div>
-                                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                                  <div className="slot-create-form">
                                     <input
                                       className="min-w-0 flex-1 rounded border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs"
                                       value={slotDraftNames[toSlotKey(territory.id, slotIndex)] ?? ""}
@@ -1767,7 +1778,7 @@ export function TerritoryAssignmentBoard({
                                     <button
                                       type="button"
                                       onClick={() => onOpenExistingAssigneesModal(territory.id, slotIndex)}
-                                      className="rounded border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-2 py-1 text-xs text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40"
+                                      className="rounded border border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 px-2 py-1 text-xs text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40"
                                     >
                                       Add Existing Assignees
                                     </button>
@@ -1788,8 +1799,8 @@ export function TerritoryAssignmentBoard({
             <button
               type="button"
               onClick={onSaveAssignments}
-              disabled={isLoadingBoard || isSavingBoard}
-              className="rounded-md border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-4 py-2 text-sm text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={saveDisabled}
+              className="rounded-md border border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 px-4 py-2 text-sm text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSavingBoard ? "Saving..." : "Save assignments"}
             </button>
@@ -1805,23 +1816,16 @@ export function TerritoryAssignmentBoard({
               type="button"
               onClick={onCopyAssignments}
               disabled={!hasAnyPartnerPairs}
-              className="rounded-md border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/40 px-4 py-2 text-sm text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-teal-300 dark:border-teal-800 bg-teal-50 dark:bg-teal-950/40 px-4 py-2 text-sm text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Copy Assigments
+              Copy assignments
             </button>
           </div>
           {status && <p className="mt-2 text-sm text-gray-700 dark:text-gray-200">{status}</p>}
         </div>
       </section>
       {assignModalAssigneeIds.length > 0 && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          onClick={onCloseAssignModal}
-        >
-          <div
-            className="w-full max-w-2xl rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <Modal title="Assign to territory" onClose={onCloseAssignModal}>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-base font-semibold">
                 Assign {assignModalAssigneeIds.length > 1 ? `${assignModalAssigneeIds.length} Assignees` : (assigneeNameMap.get(assignModalAssigneeIds[0]) ?? "Assignee")} to Territory
@@ -1866,7 +1870,7 @@ export function TerritoryAssignmentBoard({
                           <button
                             type="button"
                             onClick={() => onAssignAssigneeToTerritory(territory.id)}
-                            className="shrink-0 rounded bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700"
+                            className="shrink-0 rounded bg-teal-600 px-3 py-1.5 text-xs text-white hover:bg-teal-700"
                           >
                             Assign
                           </button>
@@ -1877,18 +1881,10 @@ export function TerritoryAssignmentBoard({
                 ))}
               </div>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
       {existingAssigneeTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          onClick={onCloseExistingAssigneesModal}
-        >
-          <div
-            className="w-full max-w-xl rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4"
-            onClick={(event) => event.stopPropagation()}
-          >
+        <Modal title="Add existing assignees" onClose={onCloseExistingAssigneesModal}>
             <div className="mb-3 flex items-center justify-between gap-2">
               <h3 className="text-base font-semibold">
                 Add Existing Assignees
@@ -1958,7 +1954,7 @@ export function TerritoryAssignmentBoard({
                       <button
                         type="button"
                         onClick={() => onAssignExistingAssigneeToSlot(assignee.id)}
-                        className="shrink-0 rounded bg-green-600 px-3 py-1.5 text-xs text-white hover:bg-green-700"
+                        className="shrink-0 rounded bg-teal-600 px-3 py-1.5 text-xs text-white hover:bg-teal-700"
                       >
                         Assign
                       </button>
@@ -1967,9 +1963,10 @@ export function TerritoryAssignmentBoard({
                 })}
               </div>
             )}
-          </div>
-        </div>
+        </Modal>
       )}
+      <div className="mobile-save-bar"><span role="status">{saveLabel}</span><button className="button-primary" disabled={saveDisabled} onClick={onSaveAssignments}>{isSavingBoard ? "Saving…" : "Save assignments"}</button></div>
+      <p className="sr-only" aria-live="polite">{status}</p>
     </main>
   );
 }

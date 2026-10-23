@@ -99,26 +99,26 @@ export async function createDatabaseUser(formData: FormData) {
   });
 
   revalidatePath("/");
+  revalidatePath("/workspace");
+  revalidatePath("/admin", "layout");
   return { ok: true, message: "User created." };
 }
 
-async function assertCanRemoveSuperAdminRole(userId: string) {
+async function canRemoveSuperAdminRole(userId: string) {
   const target = await prisma.user.findUnique({
     where: { id: userId },
     select: { role: true },
   });
 
   if (target?.role !== "super_admin") {
-    return;
+    return true;
   }
 
   const superAdminCount = await prisma.user.count({
     where: { role: "super_admin" },
   });
 
-  if (superAdminCount <= 1) {
-    throw new Error("At least one super admin must remain.");
-  }
+  return superAdminCount > 1;
 }
 
 export async function updateDatabaseUser(formData: FormData) {
@@ -137,11 +137,13 @@ export async function updateDatabaseUser(formData: FormData) {
   });
 
   if (!target) {
-    throw new Error("User not found.");
+    return { ok: false, message: "User not found." };
   }
 
   if (target.role === "super_admin" && role !== "super_admin") {
-    await assertCanRemoveSuperAdminRole(userId);
+    if (!(await canRemoveSuperAdminRole(userId))) {
+      return { ok: false, message: "At least one super admin must remain." };
+    }
   }
 
   const passwordHash = password ? await hashPasswordForStorage(password) : null;
@@ -189,10 +191,14 @@ export async function updateDatabaseUser(formData: FormData) {
 
   if (currentUserId === userId && role !== "super_admin") {
     revalidatePath("/");
+    revalidatePath("/workspace");
+    revalidatePath("/admin", "layout");
     return { ok: true, message: "User updated. This account is no longer a super admin." };
   }
 
   revalidatePath("/");
+  revalidatePath("/workspace");
+  revalidatePath("/admin", "layout");
   return { ok: true, message: "User updated." };
 }
 
@@ -201,16 +207,20 @@ export async function deleteDatabaseUser(formData: FormData) {
   const userId = getRequiredText(formData, "userId");
 
   if (userId === currentUserId) {
-    throw new Error("You cannot delete your own account.");
+    return { ok: false, message: "You cannot delete your own account." };
   }
 
-  await assertCanRemoveSuperAdminRole(userId);
+  if (!(await canRemoveSuperAdminRole(userId))) {
+    return { ok: false, message: "At least one super admin must remain." };
+  }
 
   await prisma.user.delete({
     where: { id: userId },
   });
 
   revalidatePath("/");
+  revalidatePath("/workspace");
+  revalidatePath("/admin", "layout");
   return { ok: true, message: "User deleted." };
 }
 
@@ -228,6 +238,8 @@ export async function createArea(formData: FormData) {
   });
 
   revalidatePath("/");
+  revalidatePath("/workspace");
+  revalidatePath("/admin", "layout");
   revalidatePath("/api/territories");
   return { ok: true, message: "Area added." };
 }
@@ -252,6 +264,8 @@ export async function updateTerritory(formData: FormData) {
   });
 
   revalidatePath("/");
+  revalidatePath("/workspace");
+  revalidatePath("/admin", "layout");
   revalidatePath("/api/territories");
   return { ok: true, message: "Territory updated." };
 }
@@ -276,6 +290,8 @@ export async function createTerritory(formData: FormData) {
   });
 
   revalidatePath("/");
+  revalidatePath("/workspace");
+  revalidatePath("/admin", "layout");
   revalidatePath("/api/territories");
   return { ok: true, message: "Territory added." };
 }

@@ -38,19 +38,6 @@ export default function RootLayout({
                   apply(stored ? stored === 'dark' : media.matches);
                 };
                 applyPreferredTheme();
-                if (typeof media.addEventListener === 'function') {
-                  media.addEventListener('change', function (event) {
-                    if (!getStoredTheme()) {
-                      apply(event.matches);
-                    }
-                  });
-                } else if (typeof media.addListener === 'function') {
-                  media.addListener(function (event) {
-                    if (!getStoredTheme()) {
-                      apply(event.matches);
-                    }
-                  });
-                }
               })();
             `,
           }}

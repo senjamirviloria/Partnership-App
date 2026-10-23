@@ -1,4 +1,4 @@
-import { createCipheriv, pbkdf2Sync, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, pbkdf2Sync, randomBytes } from "node:crypto";
 
 const TRANSPORT_SALT = "territory-api-transport-v1";
 const TRANSPORT_ITERATIONS = 120000;
@@ -37,7 +37,7 @@ function deriveTransportKey(userId: string) {
   );
 }
 
-export function encryptTerritoryPayloadForUser(userId: string, payload: unknown) {
+export function encryptTransportPayloadForUser(userId: string, payload: unknown) {
   const key = deriveTransportKey(userId);
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
@@ -53,3 +53,25 @@ export function encryptTerritoryPayloadForUser(userId: string, payload: unknown)
   const packed = Buffer.concat([iv, encrypted, tag]);
   return `enc:${packed.toString("base64")}`;
 }
+
+export function decryptTransportPayloadForUser<T = unknown>(userId: string, raw: string): T {
+  if (!raw.startsWith("enc:")) {
+    throw new Error("Encrypted transport payload is required.");
+  }
+
+  const packed = Buffer.from(raw.slice(4), "base64");
+  if (packed.length <= 28) {
+    throw new Error("Invalid encrypted transport payload.");
+  }
+
+  const key = deriveTransportKey(userId);
+  const iv = packed.subarray(0, 12);
+  const cipherText = packed.subarray(12, -16);
+  const tag = packed.subarray(-16);
+  const decipher = createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  const decrypted = Buffer.concat([decipher.update(cipherText), decipher.final()]).toString("utf8");
+  return JSON.parse(decrypted) as T;
+}
+
+export const encryptTerritoryPayloadForUser = encryptTransportPayloadForUser;
