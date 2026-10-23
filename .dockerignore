@@ -6,3 +6,15 @@ yarn-debug.log*
 yarn-error.log*
 .git
 .DS_Store
+
+# Deployment backups and runtime overrides must never enter an image.
+.deploy
+docker-compose.override.yml
+seed-territories.local.json.*
+test-results
+playwright-report
+tests
+scripts
+deploy
+Jenkinsfile
+README.md

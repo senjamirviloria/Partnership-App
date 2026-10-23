@@ -26,7 +26,6 @@ function getTrustedOrigins() {
     process.env.BETTER_AUTH_URL,
     process.env.NEXT_PUBLIC_BETTER_AUTH_URL,
     "http://localhost:3101",
-    "https://partnership_app-senjamirv.as2.pitunnel.net",
   ]
     .filter((origin): origin is string => Boolean(origin))
     .map((origin) => normalizeOrigin(origin));

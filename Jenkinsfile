@@ -3,6 +3,8 @@ pipeline {
 
   options {
     disableConcurrentBuilds()
+    skipDefaultCheckout(true)
+    buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
   triggers {
@@ -10,52 +12,26 @@ pipeline {
   }
 
   environment {
-    DEPLOY_DIR = '/deploy/Partnership-App'
-    GIT_SSH_COMMAND = 'ssh -i /host_ssh/id_ed25519 -o StrictHostKeyChecking=no'
+    GIT_SSH_COMMAND = 'ssh -i /host_ssh/id_ed25519 -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts'
   }
 
   stages {
-    stage('Sync develop') {
+    stage('Checkout production') {
       steps {
-        sh '''#!/bin/sh
-set -eu
-git config --global --add safe.directory "$DEPLOY_DIR"
-cd "$DEPLOY_DIR"
-git fetch origin develop
-git checkout -B develop origin/develop
-'''
+        checkout scm
       }
     }
 
-    stage('Verify local deployment files') {
+    stage('Deploy production app') {
       steps {
         sh '''#!/bin/sh
 set -eu
-cd "$DEPLOY_DIR"
-test -f .env
-test -f .env.seed.local
-test -f seed-territories.local.json
-'''
-      }
-    }
-
-    stage('Build app image') {
-      steps {
-        sh '''#!/bin/sh
-set -eu
-cd "$DEPLOY_DIR"
-docker compose build app
-'''
-      }
-    }
-
-    stage('Deploy app stack') {
-      steps {
-        sh '''#!/bin/sh
-set -eu
-cd "$DEPLOY_DIR"
-docker compose up -d --remove-orphans
-docker compose ps
+commit=$(git rev-parse HEAD)
+ssh -i /host_ssh/id_ed25519 \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=/root/.ssh/known_hosts \
+  sen@192.168.1.107 "deploy $commit"
 '''
       }
     }

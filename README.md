@@ -46,20 +46,37 @@ npm run dev
 
 ## Docker Setup
 
-1. Build and run containers
+1. Build the app and start the database
 ```bash
-docker compose up --build
+docker compose build app
+docker compose up -d --wait db
 ```
 
-For Docker builds, `NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY` must be available to Docker Compose before the image is built because Next.js bakes `NEXT_PUBLIC_*` values into the browser bundle. Put it in a root `.env` file or export it in the shell before `docker compose up --build`. It must match `TERRITORY_TRANSPORT_KEY`.
+For a **new database only**, initialize the schema and seed records explicitly:
+```bash
+docker compose run --rm --no-deps app sh -c 'npm run db:push && npm run db:seed'
+```
+
+Then start the application:
+```bash
+docker compose up -d --no-deps app
+```
+
+For application updates against an existing database, rebuild and replace only the
+app service. Do not run database initialization or seeding:
+```bash
+docker compose build app
+docker compose up -d --no-deps app
+```
+
+For Docker builds, `NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY` must be available to Docker Compose before the image is built because Next.js bakes `NEXT_PUBLIC_*` values into the browser bundle. Put it in a root `.env` file or export it in the shell before `docker compose build app`. It must match `TERRITORY_TRANSPORT_KEY`.
 
 2. App will be available at:
-- [http://localhost:3000](http://localhost:3000)
+- [http://localhost:3101](http://localhost:3101)
 
-The app container runs:
-- `prisma db push`
-- `npm run db:seed`
-- `next start`
+The app container starts Next.js only. Schema synchronization and seeding are
+explicit setup operations; application restarts and image updates do not run them.
+The runtime image includes the Prisma client generated in the builder stage.
 
 ## Hybrid Dev Mode (Backend in Docker, Frontend Local)
 
@@ -149,11 +166,13 @@ After editing `seed-territories.local.json`, reseed the database:
 npm run db:seed
 ```
 
-For Docker, rebuild or restart the container flow that runs the seed step:
+For Docker, run the seed command explicitly when you intend to update master data:
 
 ```bash
-docker compose up -d --build
+docker compose run --rm --no-deps app npm run db:seed
 ```
+
+Rebuilding or restarting the application does not seed or synchronize the database.
 
 Because `seed-territories.local.json` is ignored by git, create or copy it from `seed-territories.example.json` into the project root on each machine before running the Docker build.
 
