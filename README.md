@@ -170,3 +170,48 @@ Because `seed-territories.local.json` is ignored by git, create or copy it from 
 - Seed user identities and passwords are local configuration and should not be committed.
 - The `users` table contains identity fields (`username`, `name`, `email`).
 - Re-running `npm run db:seed` updates area/territory master data from `SEED_AREAS_JSON_FILE` without clearing existing partner assignments.
+
+## Responsive workspaces
+
+After login, super admins open `/admin`; ordinary users open `/workspace`.
+Admin pages include `/admin/users`, `/admin/areas`, and `/admin/territories`.
+Each page and mutation checks the user's database role on the server.
+The assignment workspace shows three columns from 768px upward and three tabs
+below 768px. Navigation collapses into a drawer below 1280px.
+Appearance offers System, Light, and Dark; System follows live operating-system
+changes. Existing saved Light/Dark preferences are retained.
+
+## Browser regression checks
+
+The Playwright suite uses an existing local app server and disposable fixtures.
+Never point fixture setup at the application database. The fixture script refuses
+any database except a local database named `partnership_ui_check`.
+
+```sh
+npm install
+npx playwright install chromium
+docker run --detach --rm --name partnership-ui-check-db \
+  -e MYSQL_ROOT_PASSWORD=ui_test_password \
+  -e MYSQL_DATABASE=partnership_ui_check \
+  -p 127.0.0.1:3317:3306 mysql:8.4
+```
+
+Once MySQL is ready, use a dedicated terminal with these test-only values:
+
+```sh
+export DATABASE_URL='mysql://root:ui_test_password@127.0.0.1:3317/partnership_ui_check'
+export PASSWORD_HASH_ENCRYPTION_KEY='ui-check-password-key-isolated'
+export BETTER_AUTH_SECRET='ui-check-better-auth-secret-only-for-isolated-test'
+export BETTER_AUTH_URL='http://localhost:3108'
+export NEXT_PUBLIC_BETTER_AUTH_URL='http://localhost:3108'
+export TERRITORY_TRANSPORT_KEY='ui-check-transport-key-isolated'
+export NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY='ui-check-transport-key-isolated'
+npx prisma db push
+npx tsx tests/seed-ui-check.ts
+npm run dev -- -p 3108
+```
+
+In another terminal, run `npm run test:e2e`. Set `E2E_BASE_URL` when using another
+local test-server address. Reset fixtures before each complete suite run.
+Stop the dedicated server and run `docker stop partnership-ui-check-db` afterward.
+The disposable container is removed automatically; no production data is used.

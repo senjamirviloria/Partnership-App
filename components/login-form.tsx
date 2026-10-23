@@ -37,11 +37,13 @@ export function LoginForm() {
 
   return (
     <form onSubmit={onSubmit} className="w-full max-w-md rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-6">
-      <h1 className="mb-1 text-2xl font-bold">Login</h1>
+      <p className="eyebrow">Partnership</p>
+      <h1 className="mb-1 text-2xl font-bold">Welcome back</h1>
       <p className="mb-4 text-sm text-gray-600 dark:text-gray-300">Sign in to manage territory assignments.</p>
 
-      <label className="mb-2 block text-sm font-medium">Email</label>
+      <label htmlFor="login-email" className="mb-2 block text-sm font-medium">Email</label>
       <input
+        id="login-email"
         type="email"
         required
         value={email}
@@ -49,9 +51,10 @@ export function LoginForm() {
         className="mb-3 w-full rounded border border-gray-300 dark:border-gray-600 bg-transparent px-3 py-2 text-gray-900 dark:text-gray-100"
       />
 
-      <label className="mb-2 block text-sm font-medium">Password</label>
+      <label htmlFor="login-password" className="mb-2 block text-sm font-medium">Password</label>
       <div className="mb-4 flex items-center rounded border border-gray-300 dark:border-gray-600 px-3 focus-within:border-gray-400">
         <input
+          id="login-password"
           type={showPassword ? "text" : "password"}
           required
           value={password}
@@ -71,7 +74,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded bg-black px-4 py-2 text-white disabled:opacity-60"
+        className="button-primary w-full"
       >
         {loading ? "Signing in..." : "Sign in"}
       </button>
