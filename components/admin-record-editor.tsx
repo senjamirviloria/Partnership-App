@@ -168,9 +168,13 @@ export const AdminRecordEditor = ({
                 <textarea
                   name="locations"
                   rows={5}
+                  aria-describedby="locations-help"
                   defaultValue={editingTerritory?.locations ?? ""}
                 />
               </label>
+              <p id="locations-help" className="text-muted text-xs">
+                Separate locations with a semicolon (;). Each location gets its own Google Maps link.
+              </p>
             </>
           )}
         </fieldset>

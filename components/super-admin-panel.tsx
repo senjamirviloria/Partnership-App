@@ -17,6 +17,7 @@ import type {
   AdminEditor,
   AdminUser,
 } from "@/lib/admin-data";
+import { LocationList } from "@/components/location-list";
 import { AdminRecordEditor } from "@/components/admin-record-editor";
 
 type Props = {
@@ -292,7 +293,7 @@ export const SuperAdminPanel = ({
                       </td>
                       <td>{territory.areaName}</td>
                       <td className="location-cell">
-                        {territory.locations || "—"}
+                        <LocationList locations={territory.locations} emptyText="—" />
                       </td>
                       <td>{territory.noOfPartners ?? 0}</td>
                       <td>

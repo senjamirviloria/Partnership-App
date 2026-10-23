@@ -10,6 +10,8 @@ import {
 } from "@mdi/js";
 
 import { loadBoardState, saveBoardState } from "@/app/actions";
+import { LocationList } from "@/components/location-list";
+import { formatLocations } from "@/lib/locations";
 import { Modal } from "@/components/modal";
 import { useUnsavedBoard, useFullscreenPanel } from "@/components/use-board-guards";
 
@@ -109,14 +111,6 @@ function getTransportSecret() {
     throw new Error("Missing NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY.");
   }
   return normalized;
-}
-
-function formatLocations(locations: string | null) {
-  if (!locations) return [];
-  return locations
-    .split(";")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
 }
 
 function base64ToBytes(base64: string) {
@@ -1246,15 +1240,11 @@ export function TerritoryAssignmentBoard({
                             <span className="font-semibold">
                               {territory.territoryName} ({formatPairRequirement(territory.noOfPartners, territory.withCars)})
                             </span>
-                            <span className="mt-1 block text-gray-600 dark:text-gray-300">
-                              {formatLocations(territory.locations).map((location) => (
-                                <span key={location} className="block">
-                                  {location}
-                                </span>
-                              ))}
-                            </span>
                           </span>
                         </label>
+                        <div className="ml-6 mt-1 text-sm text-gray-600 dark:text-gray-300">
+                          <LocationList locations={territory.locations} />
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -1536,7 +1526,6 @@ export function TerritoryAssignmentBoard({
                 <div className={isPairsMaximized ? "grid gap-3 md:grid-cols-2 xl:grid-cols-3" : "space-y-3"}>
                   {area.territories.map((territory) => {
                     const maxSlots = Math.max(territory.noOfPartners ?? 0, 0);
-                    const territoryLocations = formatLocations(territory.locations);
                     const areLocationsOpen = openPairLocationTerritories[territory.id] ?? false;
                     return (
                       <div key={territory.id} className="rounded-md border border-gray-100 dark:border-gray-800 p-3">
@@ -1559,15 +1548,7 @@ export function TerritoryAssignmentBoard({
                         </button>
                         {areLocationsOpen && (
                           <div className="mb-3 rounded-md border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-950 px-3 py-2">
-                            {territoryLocations.length === 0 ? (
-                              <p className="text-xs text-gray-500 dark:text-gray-400">No locations listed.</p>
-                            ) : (
-                              <ul className="space-y-1 text-xs text-gray-600 dark:text-gray-300">
-                                {territoryLocations.map((location) => (
-                                  <li key={location}>{location}</li>
-                                ))}
-                              </ul>
-                            )}
+                            <LocationList locations={territory.locations} emptyText="No locations listed." />
                           </div>
                         )}
                         <div className="space-y-2">

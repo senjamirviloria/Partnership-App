@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 
 const password = "UiCheckPassword123!";
 let loginClient = 0;
@@ -525,4 +525,76 @@ test("mobile navigation restores focus and unsaved links and history can be canc
   await page.evaluate(() => history.back());
   await (await confirmation).dismiss();
   await expect(page).toHaveURL(/\/workspace$/);
+});
+
+test("each semicolon-separated location opens its own Maps search without changing selections", async ({ page, context }) => {
+  await context.route("https://www.google.com/maps/search/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<title>Maps search test</title>" }),
+  );
+  await login(page);
+  await page.goto("/admin/areas?new=1");
+  await page.getByLabel("Area name", { exact: true }).fill("Maps Check Area");
+  await page.getByRole("button", { name: "Create area", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.goto("/admin/territories?new=1");
+  await page.getByRole("combobox", { name: "Area", exact: true }).selectOption({ label: "Maps Check Area" });
+  await page.getByLabel("Name", { exact: true }).fill("Maps Check Territory");
+  const firstLocation = "Café & Bakery, Al Nahda";
+  const secondLocation = "Station (20A St)";
+  const rawLocations = ` ${firstLocation} ; ; ${secondLocation}; ${firstLocation}; `;
+  await page.getByLabel("Locations", { exact: true }).fill(rawLocations);
+  await expect(page.getByText("Separate locations with a semicolon", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Create territory", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Search territories" }).fill("Maps Check Territory");
+  const row = page.getByRole("row").filter({ hasText: "Maps Check Territory" });
+  await expect(row.locator(".location-map-link")).toHaveCount(3);
+  await expect(row.locator(".location-map-link").nth(0)).toHaveAttribute("rel", "noopener noreferrer");
+
+  const openMap = async (link: Locator, location: string) => {
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAccessibleName(`Search ${location} in Google Maps (opens in a new tab)`);
+    const popupPromise = page.waitForEvent("popup");
+    await link.click();
+    const popup = await popupPromise;
+    await popup.waitForLoadState();
+    const url = new URL(popup.url());
+    expect(url.origin + url.pathname).toBe("https://www.google.com/maps/search/");
+    expect(url.searchParams.get("api")).toBe("1");
+    expect(url.searchParams.get("query")).toBe(location);
+    await popup.close();
+  };
+  await openMap(row.locator(".location-map-link").nth(0), firstLocation);
+  await openMap(row.locator(".location-map-link").nth(1), secondLocation);
+
+  await page.goto("/workspace");
+  await expect(page.getByText("All changes saved", { exact: true }).first()).toBeVisible();
+  const territories = page.locator("#panel-territories");
+  await territories.getByRole("textbox", { name: "Search territories" }).fill("Maps Check Territory");
+  await expect(territories.locator(".location-map-link")).toHaveCount(3);
+  const checkbox = territories.getByRole("checkbox");
+  await expect(checkbox).not.toBeChecked();
+  await openMap(territories.locator(".location-map-link").nth(0), firstLocation);
+  await expect(checkbox).not.toBeChecked();
+  await checkbox.check();
+  await openMap(territories.locator(".location-map-link").nth(1), secondLocation);
+  await expect(checkbox).toBeChecked();
+  const pairs = page.locator("#panel-pairs");
+  await pairs.getByRole("button", { name: "Show all locations", exact: true }).click();
+  await expect(pairs.locator(".location-map-link")).toHaveCount(3);
+  await openMap(pairs.locator(".location-map-link").nth(1), secondLocation);
+  await expect(checkbox).toBeChecked();
+
+  for (const width of [375, 390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 950 });
+    if (width < 768) await openTab(page, "Partner Pairs");
+    await expect(pairs.locator(".location-map-link").first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 390, height: 950 });
+  await openMap(pairs.locator(".location-map-link").nth(0), firstLocation);
+  await openTab(page, "Territories");
+  await expect(checkbox).toBeChecked();
+  await openMap(territories.locator(".location-map-link").nth(1), secondLocation);
+  await expect(checkbox).toBeChecked();
 });

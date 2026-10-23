@@ -80,7 +80,7 @@ export const useFullscreenPanel = (panel: string | null, close: () => void) => {
       if (event.key !== "Tab" || !element) return;
       const controls = [
         ...element.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+          'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
         ),
       ].filter((control) => control.getClientRects().length > 0);
       const first = controls[0];
