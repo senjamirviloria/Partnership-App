@@ -17,14 +17,17 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { ThemeControl } from "@/components/theme-control";
 import { Modal } from "@/components/modal";
+import { TutorialProvider, ReplayTutorialButton } from "@/components/tutorial/tutorial-provider";
+import { AdminTutorial } from "@/components/tutorial/admin-tutorial";
 
 type Props = {
   children: ReactNode;
-  user: { name: string; email: string; role: string };
+  user: { id: string; name: string; email: string; role: string };
   admin?: boolean;
+  tutorialEnabled?: boolean;
 };
 
-export const AppShell = ({ children, user, admin = false }: Props) => {
+export const AppShell = ({ children, user, admin = false, tutorialEnabled = false }: Props) => {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -73,6 +76,7 @@ export const AppShell = ({ children, user, admin = false }: Props) => {
         {(admin || user.role === "super_admin") && (
           <Link
             className="workspace-switch"
+            data-tutorial="workspace-switch"
             href={admin ? "/workspace" : "/admin"}
             onClick={() => setMenuOpen(false)}
           >
@@ -91,7 +95,8 @@ export const AppShell = ({ children, user, admin = false }: Props) => {
     </>
   );
   return (
-    <div className="app-shell">
+    <TutorialProvider enabled={tutorialEnabled} userId={user.id} admin={admin}>
+    <div className={`app-shell${tutorialEnabled ? " tutorial-shell" : ""}`}>
       <aside className="sidebar">{navigation}</aside>
       {menuOpen && (
         <Modal title="Navigation" drawer onClose={() => setMenuOpen(false)}>
@@ -105,6 +110,7 @@ export const AppShell = ({ children, user, admin = false }: Props) => {
               type="button"
               className="icon-button xl:hidden"
               aria-label="Open navigation"
+              data-tutorial="navigation-menu"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(true)}
             >
@@ -116,6 +122,7 @@ export const AppShell = ({ children, user, admin = false }: Props) => {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            <ReplayTutorialButton />
             <ThemeControl />
             <button
               className="button-secondary"
@@ -147,6 +154,8 @@ export const AppShell = ({ children, user, admin = false }: Props) => {
         )}
         <div className="shell-content">{children}</div>
       </div>
+      {admin && tutorialEnabled && <AdminTutorial />}
     </div>
+    </TutorialProvider>
   );
 };

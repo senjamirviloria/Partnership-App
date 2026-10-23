@@ -272,3 +272,28 @@ Run deployment guard checks with:
 ```sh
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
+
+## Local onboarding preview
+
+First-login tutorials are disabled unless the server receives
+`ENABLE_ONBOARDING_TUTORIAL=true`. Enable this only for a local preview while
+this feature is being evaluated. No database migration is required.
+
+Admins receive an explanatory overview tour. The assignment workspace tour is
+hands-on: it uses the signed-in account's real workspace records and waits for a
+complete pair and saved state. Skipping or going back does not undo edits. The
+question-mark button in the header replays the current workspace's tutorial.
+Completion and interrupted progress are stored per account and tour in browser
+storage, under `partnership:tutorial:v1:` keys. Without storage, progress lasts
+for the current document's client-side navigation only.
+
+Run the dedicated tutorial browser tests against an enabled, isolated preview:
+
+```sh
+E2E_TUTORIALS=true E2E_BASE_URL=http://localhost:3110 npx playwright test tests/tutorial.spec.ts
+```
+
+The tutorial tests expect the disposable fixtures from `tests/seed-ui-check.ts`
+and matching transport-key environment variables in the test runner and preview.
+Run the existing `tests/workspace.spec.ts` regression suite against a preview
+with tutorials disabled. Never seed or run browser fixtures against production.

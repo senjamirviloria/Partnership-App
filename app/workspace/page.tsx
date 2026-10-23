@@ -5,7 +5,7 @@ import { TerritoryAssignmentBoard } from "@/components/territory-assignment-boar
 const WorkspacePage = async () => {
   const user = await requireUser();
   return (
-    <AppShell user={user}>
+    <AppShell tutorialEnabled={process.env.ENABLE_ONBOARDING_TUTORIAL === "true"} user={user}>
       <TerritoryAssignmentBoard
         currentUserId={user.id}
         currentUserName={user.name}

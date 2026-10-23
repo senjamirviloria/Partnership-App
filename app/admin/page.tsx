@@ -38,7 +38,7 @@ const AdminPage = async () => {
           <p>Manage your people and territory directory.</p>
         </div>
       </div>
-      <div className="stats-grid">
+      <div className="stats-grid" data-tutorial="admin-counts">
         {[
           {
             label: "Total users",
@@ -74,7 +74,7 @@ const AdminPage = async () => {
           </Link>
         ))}
       </div>
-      <div className="overview-grid">
+      <div className="overview-grid" data-tutorial="admin-directory">
         <section className="surface">
           <div className="section-heading">
             <h2>Territory directory</h2>

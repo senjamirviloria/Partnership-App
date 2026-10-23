@@ -10,6 +10,7 @@ import {
 } from "@mdi/js";
 
 import { loadBoardState, saveBoardState } from "@/app/actions";
+import { WorkspaceTutorial } from "@/components/tutorial/workspace-tutorial";
 import { LocationList } from "@/components/location-list";
 import { formatLocations } from "@/lib/locations";
 import { Modal } from "@/components/modal";
@@ -1152,6 +1153,23 @@ export function TerritoryAssignmentBoard({
   const isAssigneesMaximized = maximizedPanel === "assignees";
   const isPairsMaximized = maximizedPanel === "pairs";
 
+  const tutorialStep = useCallback((step: string) => {
+    if (step === "territories" || step === "assignees") setActiveTab(step);
+    else setActiveTab("pairs");
+    if (step === "maps") {
+      setOpenPairLocationTerritories((current) => ({
+        ...current,
+        ...Object.fromEntries(selectedTerritories.map((id) => [id, true])),
+      }));
+    }
+  }, [selectedTerritories]);
+  const tutorialTerritories = selectedTerritories
+    .map((id) => territoryMap.get(id))
+    .filter((territory) => territory && (territory.noOfPartners ?? 0) > 0);
+  const tutorialPair = tutorialTerritories.some((territory) => territory &&
+    (slotAssignmentsByTerritory[territory.id] ?? []).slice(0, territory.noOfPartners ?? 0)
+      .some((slot) => slot.length === 2));
+
   return (
     <main className="assignment-workspace">
       <div className="page-heading"><div><p className="eyebrow">My workspace</p><h1>Assignment board</h1><p>Choose territories, add assignees, and organize pairs.</p><span className="sr-only">Signed in as {currentUserName}</span></div>
@@ -1182,7 +1200,7 @@ export function TerritoryAssignmentBoard({
       )}
 
       <section className="board-columns" aria-label="Assignment workspace">
-        <div id="panel-territories" role={isTerritoriesMaximized ? "dialog" : "tabpanel"} aria-modal={isTerritoriesMaximized || undefined} aria-labelledby="tab-territories" tabIndex={0} inert={isLoadingAreas || isLoadingBoard || !!loadError} data-active={activeTab === "territories"} className={`${getPanelClassName(isTerritoriesMaximized)} ${isTerritoriesMaximized ? "maximized-panel" : "responsive-panel"}`}>
+        <div data-tutorial="territory-picker" id="panel-territories" role={isTerritoriesMaximized ? "dialog" : "tabpanel"} aria-modal={isTerritoriesMaximized || undefined} aria-labelledby="tab-territories" tabIndex={0} inert={isLoadingAreas || isLoadingBoard || !!loadError} data-active={activeTab === "territories"} className={`${getPanelClassName(isTerritoriesMaximized)} ${isTerritoriesMaximized ? "maximized-panel" : "responsive-panel"}`}>
           <div className={getPanelHeaderClassName(isTerritoriesMaximized)}>
             <h2 className="text-lg font-semibold">Territories</h2>
             <div className="flex items-center gap-2">
@@ -1267,6 +1285,7 @@ export function TerritoryAssignmentBoard({
                 ? "mb-5 grid max-w-4xl gap-3 rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 p-3 md:grid-cols-[minmax(260px,1fr)_auto_auto] md:items-center"
                 : "mb-3 space-y-2"
             }
+            data-tutorial="assignee-create"
           >
             <input
               className="w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
@@ -1475,7 +1494,7 @@ export function TerritoryAssignmentBoard({
           </div>
         </div>
 
-        <div id="panel-pairs" role={isPairsMaximized ? "dialog" : "tabpanel"} aria-modal={isPairsMaximized || undefined} aria-labelledby="tab-pairs" tabIndex={0} inert={isLoadingAreas || isLoadingBoard || !!loadError} data-active={activeTab === "pairs"} className={`${getPanelClassName(isPairsMaximized)} ${isPairsMaximized ? "maximized-panel" : "responsive-panel"}`}>
+        <div data-tutorial="pair-workspace" id="panel-pairs" role={isPairsMaximized ? "dialog" : "tabpanel"} aria-modal={isPairsMaximized || undefined} aria-labelledby="tab-pairs" tabIndex={0} inert={isLoadingAreas || isLoadingBoard || !!loadError} data-active={activeTab === "pairs"} className={`${getPanelClassName(isPairsMaximized)} ${isPairsMaximized ? "maximized-panel" : "responsive-panel"}`}>
           <div className={getPanelHeaderClassName(isPairsMaximized)}>
             <h2 className="text-lg font-semibold">Partner Pairs</h2>
             {getMaximizeButton("pairs", "Assign Partner Pairs")}
@@ -1955,6 +1974,16 @@ export function TerritoryAssignmentBoard({
       )}
       <div className="mobile-save-bar"><span role="status">{saveLabel}</span><button className="button-primary" disabled={saveDisabled} onClick={onSaveAssignments}>{isSavingBoard ? "Saving…" : "Save assignments"}</button></div>
       <p className="sr-only" aria-live="polite">{status}</p>
+      <WorkspaceTutorial state={{
+        ready: savedSnapshot !== null && !isLoadingAreas && !isLoadingBoard && !loadError,
+        hasUsableTerritories: [...territoryMap.values()].some((territory) => (territory.noOfPartners ?? 0) > 0),
+        hasSelectedTerritory: tutorialTerritories.length > 0,
+        hasTwoAssignees: assignees.length >= 2,
+        hasCompletePair: tutorialPair,
+        hasLocations: tutorialTerritories.some((territory) => territory && formatLocations(territory.locations).length > 0),
+        saved: savedSnapshot !== null && !isDirty && !isSavingBoard && !saveFailed,
+        saveFailed,
+      }} onStep={tutorialStep} />
     </main>
   );
 }
