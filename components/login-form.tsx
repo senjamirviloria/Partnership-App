@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import Icon from "@mdi/react";
 import { mdiEye, mdiEyeOff } from "@mdi/js";
 
+import { markTutorialLogin } from "@/components/tutorial/tutorial-storage";
 import { authClient } from "@/lib/auth-client";
 
-export function LoginForm() {
+export function LoginForm({ tutorialEnabled = false }: { tutorialEnabled?: boolean }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,7 +21,7 @@ export function LoginForm() {
     setError("");
     setLoading(true);
 
-    const { error: signInError } = await authClient.signIn.email({
+    const { data, error: signInError } = await authClient.signIn.email({
       email,
       password,
     });
@@ -31,6 +32,7 @@ export function LoginForm() {
       return;
     }
 
+    if (tutorialEnabled && data?.user?.id) markTutorialLogin(data.user.id);
     router.push("/");
     router.refresh();
   };

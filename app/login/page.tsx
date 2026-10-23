@@ -17,7 +17,7 @@ export default async function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950 p-6">
       <div className="absolute right-6 top-6"><ThemeControl /></div>
-      <LoginForm />
+      <LoginForm tutorialEnabled={process.env.ENABLE_ONBOARDING_TUTORIAL === "true"} />
     </main>
   );
 }

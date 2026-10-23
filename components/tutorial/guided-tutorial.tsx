@@ -3,7 +3,7 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { Modal } from "@/components/modal";
 import { otherInteractionOpen, useTutorialEnvironment } from "./tutorial-provider";
-import { readTutorial, subscribeTutorial, tutorialKey, writeTutorial, type TutorialKind, type TutorialProgress } from "./tutorial-storage";
+import { readTutorial, setTutorialPreference, subscribeTutorial, tutorialKey, writeTutorial, type TutorialKind, type TutorialProgress } from "./tutorial-storage";
 
 export type TutorialStep = {
   id: string;
@@ -27,7 +27,7 @@ type Props = {
   onFinish?: () => void;
 };
 
-/** Local-only, resumable guidance: native welcome dialog, then non-modal coaching. */
+/** Resumable guidance: native welcome dialog, then non-modal coaching. */
 export const GuidedTutorial = ({
   kind, eligible, title, introduction, steps, canStart = true,
   unavailableMessage, onStep, finishLabel = "Finish tutorial", onFinish,
@@ -63,7 +63,7 @@ export const GuidedTutorial = ({
     writeTutorial(key, initial);
   }, [enabled, eligible, replay, blocked, key]);
 
-  const active = enabled && eligible && record?.status === "active";
+  const active = enabled && eligible && record?.show === true;
   const index = Math.min(record?.step ?? 0, steps.length);
   const step = index > 0 ? steps[index - 1] : null;
   const visible = active && !blocked;
@@ -144,12 +144,19 @@ export const GuidedTutorial = ({
   }, [visible, stepId, key, index]);
 
   if (!visible) return null;
+  const rememberChoice = (
+    <label className="tutorial-remember">
+      <input type="checkbox" checked={record?.dontShowAgain ?? true} onChange={(event) => setTutorialPreference(key, event.target.checked)} />
+      <span>Don&apos;t show this tutorial again.</span>
+    </label>
+  );
   return (
     <div data-tutorial-root>
       {!step ? (
         <Modal title={title} onClose={skip}>
           <p className="tutorial-description">{introduction}</p>
           {!canStart && <p role="status" className="notice">{unavailableMessage}</p>}
+          {rememberChoice}
           <div className="tutorial-actions">
             <button type="button" className="button-secondary" onClick={skip}>Skip tutorial</button>
             <button type="button" className="button-primary" disabled={!canStart} onClick={() => update({ status: "active", step: 1 })}>Start tutorial</button>
@@ -164,6 +171,7 @@ export const GuidedTutorial = ({
           <h2 id="tutorial-heading">{step.title}</h2>
           <p id="tutorial-description">{step.description}</p>
           <p role="status" className="tutorial-hint">{step.ready === false ? step.hint : "Ready to continue."}</p>
+          {rememberChoice}
           <div className="tutorial-actions">
             <button type="button" className="button-secondary" onClick={() => update({ status: "active", step: index - 1 })}>Back</button>
             <button type="button" className="button-primary" disabled={step.ready === false} onClick={() => {

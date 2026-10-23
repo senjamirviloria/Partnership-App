@@ -273,19 +273,26 @@ Run deployment guard checks with:
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-## Local onboarding preview
+## First-login tutorials and local preview
 
 First-login tutorials are disabled unless the server receives
-`ENABLE_ONBOARDING_TUTORIAL=true`. Enable this only for a local preview while
-this feature is being evaluated. No database migration is required.
+`ENABLE_ONBOARDING_TUTORIAL=true`. This runtime flag controls both the tutorials
+and sign-in reminder markers. No database migration is required.
 
 Admins receive an explanatory overview tour. The assignment workspace tour is
 hands-on: it uses the signed-in account's real workspace records and waits for a
 complete pair and saved state. Skipping or going back does not undo edits. The
 question-mark button in the header replays the current workspace's tutorial.
 Completion and interrupted progress are stored per account and tour in browser
-storage, under `partnership:tutorial:v1:` keys. Without storage, progress lasts
-for the current document's client-side navigation only.
+storage, under `partnership:tutorial:v1:` keys. The “Don't show this tutorial again.”
+checkbox is checked by default and can be changed on the welcome dialog or any
+step without closing the current tutorial. With it unchecked, skipping dismisses
+the tutorial until the next successful sign-in, including across reloads. Completed
+tutorials remain dismissed; Replay always works and keeps the saved preference.
+Existing completed/skipped records remain dismissed. Checkbox preferences and
+non-sensitive sign-in markers are stored separately from tutorial progress.
+Without storage, these settings last for the current document's client-side
+navigation only; they cannot survive a full reload.
 
 Run the dedicated tutorial browser tests against an enabled, isolated preview:
 

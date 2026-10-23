@@ -3,9 +3,9 @@ import { encryptTerritoryPayloadForUser } from "../lib/territory-transport";
 
 test.skip(process.env.E2E_TUTORIALS !== "true", "Enable only against the isolated onboarding preview.");
 let client = 100;
-const login = async (page: Page, account = "ui-other") => {
+const login = async (page: Page, account = "ui-other", navigate = true) => {
   await page.context().setExtraHTTPHeaders({ "x-forwarded-for": `192.0.2.${++client}` });
-  await page.goto("/login");
+  if (navigate) await page.goto("/login");
   await page.locator('input[type="email"]').fill(`${account}@example.test`);
   await page.locator('input[type="password"]').fill("UiCheckPassword123!");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -18,6 +18,7 @@ const start = (page: Page) => page.getByRole("button", { name: "Start tutorial",
 test("admin introduction supports themes, widths, handoff, replay, and focus restoration", async ({ page }) => {
   await login(page, "ui-admin");
   await expect(page.getByRole("dialog", { name: "Welcome to Partnership administration", exact: true })).toBeVisible();
+  await page.getByRole("checkbox", { name: "Don't show this tutorial again.", exact: true }).uncheck();
   await start(page);
   await expect(coach(page)).toContainText("Your admin overview");
   for (const width of [375, 390, 768, 1024, 1440]) {
@@ -38,6 +39,10 @@ test("admin introduction supports themes, widths, handoff, replay, and focus res
   await expect(page.getByRole("dialog", { name: "Try your first territory assignment", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Skip tutorial", exact: true }).click();
   await page.getByRole("link", { name: "Open admin dashboard", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await signOut(page);
+  await login(page, "ui-admin");
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Replay tutorial", exact: true }).click();
@@ -127,6 +132,7 @@ test("hands-on mobile walkthrough waits for actions, pauses for dialogs, and sur
 
 test("unfinished progress resumes; skip preserves edits and remains separate for each account", async ({ page }) => {
   await login(page, "ui-user");
+  await page.getByRole("checkbox", { name: "Don't show this tutorial again.", exact: true }).uncheck();
   await start(page);
   await page.locator("#panel-territories").getByRole("button", { name: /DTAQ 1/ }).click();
   await page.locator('#panel-territories input[type="checkbox"]').first().check();
@@ -196,4 +202,121 @@ test("first automatic launch waits until an already-open navigation drawer close
   await expect(page.getByRole("dialog", { name: "Try your first territory assignment", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Close Navigation", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Try your first territory assignment", exact: true })).toBeVisible();
+});
+
+
+const checkboxLabel = "Don't show this tutorial again.";
+const signOut = async (page: Page) => {
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.waitForURL("**/login");
+};
+
+test("checked default and saved preference survive replay; unchecked skips wait for a successful new sign-in", async ({ page }) => {
+  await login(page, "ui-admin");
+  const checkbox = page.getByRole("checkbox", { name: checkboxLabel, exact: true });
+  await expect(checkbox).toBeChecked();
+  await checkbox.uncheck();
+  await start(page);
+  await expect(checkbox).not.toBeChecked();
+  await next(page).click();
+  await coach(page).getByRole("button", { name: "Back", exact: true }).click();
+  await expect(checkbox).not.toBeChecked();
+  await checkbox.check();
+  await expect(coach(page)).toBeVisible();
+  await coach(page).getByRole("button", { name: "Skip tutorial", exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await signOut(page);
+  await login(page, "ui-admin");
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Replay tutorial", exact: true }).click();
+  await expect(checkbox).toBeChecked();
+  await checkbox.focus();
+  await page.keyboard.press("Space");
+  await expect(checkbox).not.toBeChecked();
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const marker = await page.evaluate(() => localStorage.getItem("partnership:tutorial:v1:ui-admin:login"));
+  await signOut(page);
+  await page.locator('input[type="email"]').fill("ui-admin@example.test");
+  await page.locator('input[type="password"]').fill("IncorrectPassword!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByText("Invalid email or password", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("partnership:tutorial:v1:ui-admin:login"))).toBe(marker);
+  await login(page, "ui-admin", false);
+  await expect(checkbox).not.toBeChecked();
+  await checkbox.check();
+  await page.getByRole("button", { name: "Close Welcome to Partnership administration", exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("legacy completed and skipped records stay dismissed and replay with a checked checkbox", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("partnership:tutorial:v1:ui-admin:admin", JSON.stringify({ status: "completed", step: 5 }));
+    localStorage.setItem("partnership:tutorial:v1:ui-admin:workspace", JSON.stringify({ status: "skipped", step: 2 }));
+  });
+  await login(page, "ui-admin");
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Replay tutorial", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: checkboxLabel, exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click();
+  await page.getByRole("link", { name: "Open user workspace", exact: true }).click();
+  await expect(page.getByText("All changes saved", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Replay tutorial", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: checkboxLabel, exact: true })).toBeChecked();
+});
+
+test("checkbox and new-login reminders work in memory when storage is unavailable", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(window, "localStorage", { get: () => { throw new Error("Storage disabled"); } }));
+  await page.setViewportSize({ width: 390, height: 950 });
+  await login(page, "ui-user");
+  const checkbox = page.getByRole("checkbox", { name: checkboxLabel, exact: true });
+  await expect(checkbox).toBeChecked();
+  await checkbox.uncheck();
+  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click();
+  await signOut(page);
+  await login(page, "ui-user", false);
+  await expect(checkbox).not.toBeChecked();
+  await checkbox.check();
+  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click();
+  await signOut(page);
+  await login(page, "ui-user", false);
+  await expect(page.getByText("All changes saved", { exact: true }).last()).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Replay tutorial", exact: true }).click();
+  await expect(checkbox).toBeChecked();
+});
+
+test("read-only storage keeps fresh sign-in markers and preferences in memory", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("partnership:tutorial:v1:ui-user:login", "stale-login-marker");
+    Storage.prototype.setItem = () => { throw new DOMException("Storage is full", "QuotaExceededError"); };
+  });
+  await login(page, "ui-user");
+  const checkbox = page.getByRole("checkbox", { name: checkboxLabel, exact: true });
+  await expect(checkbox).toBeChecked();
+  await checkbox.uncheck();
+  await page.getByRole("button", { name: "Skip tutorial", exact: true }).click();
+  await signOut(page);
+  await login(page, "ui-user", false);
+  await expect(checkbox).not.toBeChecked();
+});
+
+
+test("a checked preference suppresses automatic opening even if progress is missing", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("partnership:tutorial:v1:ui-user:workspace:dont-show-again", "true");
+  });
+  await login(page, "ui-user");
+  await expect(page.getByText("All changes saved", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Replay tutorial", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: checkboxLabel, exact: true })).toBeChecked();
 });

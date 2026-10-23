@@ -988,3 +988,19 @@ td strong {
     scroll-behavior: auto;
   }
 }
+
+.tutorial-remember {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin: 10px 0;
+  color: var(--foreground);
+  font-size: 13px;
+  cursor: pointer;
+}
+.tutorial-remember input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}

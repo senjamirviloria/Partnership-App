@@ -569,8 +569,10 @@ test("each semicolon-separated location opens its own Maps search without changi
 
   await page.goto("/workspace");
   await expect(page.getByText("All changes saved", { exact: true }).first()).toBeVisible();
+  await expect(page.locator(".desktop-save").getByRole("button", { name: "Save assignments", exact: true })).toBeEnabled();
   const territories = page.locator("#panel-territories");
   await territories.getByRole("textbox", { name: "Search territories" }).fill("Maps Check Territory");
+  await expect(territories.getByRole("textbox", { name: "Search territories" })).toHaveValue("Maps Check Territory");
   await expect(territories.locator(".location-map-link")).toHaveCount(3);
   const checkbox = territories.getByRole("checkbox");
   await expect(checkbox).not.toBeChecked();
