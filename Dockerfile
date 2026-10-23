@@ -12,7 +12,7 @@ ENV NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY=$NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY
 ENV NEXT_PUBLIC_BETTER_AUTH_URL=$NEXT_PUBLIC_BETTER_AUTH_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN if [ -z "$NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY" ]; then echo "Missing build arg NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY"; exit 1; fi; npx prisma generate && npm run build -- --webpack
+RUN node -e "if (!process.env.NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY) { console.error('Missing build arg NEXT_PUBLIC_TERRITORY_TRANSPORT_KEY'); process.exit(1); }" && npx prisma generate && npm run build -- --webpack
 
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app

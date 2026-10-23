@@ -234,3 +234,41 @@ In another terminal, run `npm run test:e2e`. Set `E2E_BASE_URL` when using anoth
 local test-server address. Reset fixtures before each complete suite run.
 Stop the dedicated server and run `docker stop partnership-ui-check-db` afterward.
 The disposable container is removed automatically; no production data is used.
+
+## Production deployment
+
+Public application: [Partnership](https://partnership-app-senjamirv.as2.pitunnel.com).
+The tunnel uses the DNS-compatible name `partnership-app`; PiTunnel terminates
+HTTPS, and the application still requires its existing login accounts.
+
+`production` is the deployment branch. The Jenkins job `Partnership-App-production`
+loads this branch's `Jenkinsfile` and polls only that branch every two minutes.
+The previous `Partnership-App-develop` deployment job is disabled.
+Push reviewed changes to `production` to deploy; the job's build history records
+the exact commit. Its initial build establishes the SCM polling baseline.
+
+Jenkins uses the existing SSH key through a restricted server-side command. The
+wrapper in `scripts/jenkins-deploy.sh` accepts only a production commit or a status
+request, verifies the remote branch, and refuses to overwrite tracked local edits.
+The installed wrapper is `/home/sen/.local/libexec/partnership-production`.
+`deploy/jenkins-production.groovy` is the persistent Jenkins job configuration;
+it is installed as the Partnership init script on the controller.
+
+`scripts/deploy-production.py` builds a uniquely tagged image and validates a
+private candidate container before replacing only `partnerships-app`. It never
+starts/recreates the database or runs schema synchronization or seeding. It rejects
+schema changes and changes to existing database, authentication-secret, and
+encryption-key settings; handle a required migration as a separate reviewed task.
+Public authentication URLs can change without rotating those keys.
+
+Each deployment keeps a consistent database backup, runtime-configuration backups,
+and an app-only rollback script in `.deploy/production/`. The latest successful
+result is `.deploy/production-latest.json`. If validation fails, rollback replaces
+the app image and never restores the database automatically. Backups, local runtime
+overrides, and deployment state are excluded from Git and Docker build contexts.
+
+Run deployment guard checks with:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
