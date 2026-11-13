@@ -15,6 +15,70 @@ const openTab = async (page: Page, name: string) => {
   await page.getByRole("tab", { name, exact: true }).click();
 };
 
+test("Partner Pairs list mode shows the current roster and preserves unsaved workspace edits", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await login(page, "ui-user");
+  await expect(page.locator(".mobile-save-bar").getByRole("button", { name: "Save assignments" })).toBeEnabled();
+  await openTab(page, "Partner Pairs");
+  const trigger = page.getByRole("button", { name: "Show list mode" });
+  const preview = page.locator("dialog.pairs-preview");
+  const back = preview.getByRole("button", { name: "Back to workspace" });
+  await trigger.click();
+  await expect(preview.getByText(/No territories selected yet/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+
+  await openTab(page, "Territories");
+  const territories = page.locator("#panel-territories");
+  await territories.getByRole("button", { name: /DTAQ 1/ }).click();
+  const choices = territories.getByRole("checkbox");
+  await choices.nth(0).check();
+  await choices.nth(1).check();
+  await openTab(page, "Partner Pairs");
+  const pairs = page.locator("#panel-pairs");
+  const create = pairs.locator(".slot-create-form").first();
+  for (const name of ["Alex Rivera", "Jamie Santos"]) {
+    await create.getByPlaceholder("Add new assignee").fill(name);
+    await create.getByRole("button", { name: "Add", exact: true }).click();
+  }
+  const search = pairs.getByPlaceholder("Search assignees, territories, or locations");
+  await search.fill("Stadium");
+  await create.getByPlaceholder("Add new assignee").fill("Unsubmitted draft");
+  await expect(page.locator(".mobile-save-bar")).toContainText("Unsaved changes");
+
+  await trigger.click();
+  await expect(back).toBeFocused();
+  await expect(preview.getByRole("heading", { name: "DTAQ 1" })).toBeVisible();
+  await expect(preview.getByText("Stadium Metro Station")).toBeVisible();
+  await expect(preview.getByText("Alex Rivera & Jamie Santos")).toBeVisible();
+  await expect(preview.getByText("Al Nahda")).toBeVisible();
+  await expect(preview.getByText("Unassigned", { exact: true })).toBeVisible();
+  await expect(preview.getByRole("button")).toHaveCount(1);
+  for (const width of [375, 390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 850 });
+    const columns = preview.locator(".pairs-preview-columns");
+    if (width < 768) await expect(columns).toBeHidden();
+    else await expect(columns).toBeVisible();
+    expect(await preview.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 390, height: 850 });
+  await back.click();
+  await expect(preview).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Partner Pairs" })).toHaveAttribute("aria-selected", "true");
+  await expect(search).toHaveValue("Stadium");
+  await expect(create.getByPlaceholder("Add new assignee")).toHaveValue("Unsubmitted draft");
+  await expect(pairs.getByText("Alex Rivera", { exact: true })).toBeVisible();
+  await expect(page.locator(".mobile-save-bar")).toContainText("Unsaved changes");
+  await pairs.getByRole("button", { name: "Full screen Assign Partner Pairs" }).click();
+  await trigger.click();
+  await expect(back).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(preview).toHaveCount(0);
+  await expect(pairs.getByRole("button", { name: "Exit full screen Assign Partner Pairs" })).toBeVisible();
+  await expect(trigger).toBeFocused();
+});
+
 test("role-based entry and direct admin route protection", async ({ page }) => {
   await login(page, "ui-user");
   for (const url of [

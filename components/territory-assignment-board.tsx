@@ -7,6 +7,7 @@ import {
   mdiFullscreenExit,
   mdiHumanFemale,
   mdiHumanMale,
+  mdiFormatListBulleted,
 } from "@mdi/js";
 
 import { loadBoardState, saveBoardState } from "@/app/actions";
@@ -14,6 +15,7 @@ import { WorkspaceTutorial } from "@/components/tutorial/workspace-tutorial";
 import { LocationList } from "@/components/location-list";
 import { formatLocations } from "@/lib/locations";
 import { Modal } from "@/components/modal";
+import { PartnerPairsPreview } from "@/components/partner-pairs-preview";
 import { useUnsavedBoard, useFullscreenPanel } from "@/components/use-board-guards";
 
 type Territory = {
@@ -276,6 +278,7 @@ export function TerritoryAssignmentBoard({
   const [existingAssigneeFilter, setExistingAssigneeFilter] = useState<ExistingAssigneeFilter>("all");
   const [maximizedPanel, setMaximizedPanel] = useState<MaximizedPanel>(null);
   const [partnerPairSearchQuery, setPartnerPairSearchQuery] = useState("");
+  const [showPairsPreview, setShowPairsPreview] = useState(false);
   const [openPairLocationTerritories, setOpenPairLocationTerritories] = useState<Record<number, boolean>>({});
 
   const boardSnapshot = JSON.stringify({ selectedTerritories, slotAssignmentsByTerritory, assignees });
@@ -1827,6 +1830,18 @@ export function TerritoryAssignmentBoard({
             >
               Copy assignments
             </button>
+            <button
+              type="button"
+              className="button-secondary pairs-preview-trigger"
+              aria-haspopup="dialog"
+              onClick={(event) => {
+                event.currentTarget.focus({ preventScroll: true });
+                setShowPairsPreview(true);
+              }}
+            >
+              <Icon path={mdiFormatListBulleted} size={0.75} aria-hidden />
+              Show list mode
+            </button>
           </div>
           {status && <p className="mt-2 text-sm text-gray-700 dark:text-gray-200">{status}</p>}
         </div>
@@ -1974,6 +1989,14 @@ export function TerritoryAssignmentBoard({
       )}
       <div className="mobile-save-bar"><span role="status">{saveLabel}</span><button className="button-primary" disabled={saveDisabled} onClick={onSaveAssignments}>{isSavingBoard ? "Saving…" : "Save assignments"}</button></div>
       <p className="sr-only" aria-live="polite">{status}</p>
+      {showPairsPreview && (
+        <PartnerPairsPreview
+          areas={selectedAreas}
+          slots={slotAssignmentsByTerritory}
+          assigneeNames={assigneeNameMap}
+          onClose={() => setShowPairsPreview(false)}
+        />
+      )}
       <WorkspaceTutorial state={{
         ready: savedSnapshot !== null && !isLoadingAreas && !isLoadingBoard && !loadError,
         hasUsableTerritories: [...territoryMap.values()].some((territory) => (territory.noOfPartners ?? 0) > 0),
